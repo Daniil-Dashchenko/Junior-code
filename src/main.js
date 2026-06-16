@@ -9,6 +9,27 @@ let activeTask = null;
 const taskListContainer = document.querySelector('.task-list');
 const workspaceContainer = document.querySelector('.workspace');
 
+const STORAGE_KEY = 'junior_code_progress';
+
+function saveProgress(taskId, code, isPassed) {
+  const progress = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
+
+  const oldStatus = progress[taskId]?.isPassed || false;
+
+  progress[taskId] = {
+    code:code,
+    isPassed: isPassed || oldStatus
+  };
+
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
+}
+
+function getTaskProgress(taskId) {
+  const progress = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
+  return progress[taskId] || null
+}
+
+
 function renderTaskList() {
   taskListContainer.innerHTML = '';
   tasks.forEach(task => {
@@ -16,8 +37,13 @@ function renderTaskList() {
     taskButton.classList.add('task-item');
     taskButton.dataset.id = task.id;
 
+    const savedData = getTaskProgress(task.id);
+    const isSolved = savedData ? savedData.isPassed : false;
+
     taskButton.innerHTML = `
-      <span class="task-status" id="status-${task.id}"></span>
+      <span class="task-status ${isSolved ? 'status-success' : ''}" id="status-${task.id}">
+        ${isSolved ? '✓' : ''}
+      </span>
       <div class="task-info">
         <span class="task-title">${task.title}</span>
         <span class="task-difficulty ${task.difficulty}">
@@ -65,7 +91,11 @@ function selectTask(taskId) {
         }
 
         jar = CodeJar(editorElement, editor => Prism.highlightElement(editor));
-        jar.updateCode(activeTask.starterCode);
+        
+        const savedData = getTaskProgress(activeTask.id);
+        const codeToLoad = savedData ? savedData.code : activeTask.starterCode;
+        
+        jar.updateCode(codeToLoad);
 
         workspaceContainer.querySelector('.btn-submit').addEventListener('click', () => {
           if (jar && activeTask) {
@@ -89,7 +119,6 @@ function runTests(task, userCode) {
   let allTestsPassed = true;
 
   try {
-  
     const functionName = task.id === 'reverse-string' ? 'reverseString' : (task.id === 'filter-array' ? 'filterPositive' : 'factorial');
 
     const getTargetFunction = new Function(`
@@ -122,6 +151,8 @@ function runTests(task, userCode) {
       resultsList.appendChild(li);
     });
 
+    saveProgress(task.id, userCode, allTestsPassed);
+
     const statusIcon = document.getElementById(`status-${task.id}`);
     if (statusIcon) {
       if (allTestsPassed) {
@@ -140,6 +171,8 @@ function runTests(task, userCode) {
     li.style.color = '#ef4444';
     li.innerHTML = `<strong>Ошибка выполнения:</strong> ${error.message}`;
     resultsList.appendChild(li);
+    
+    saveProgress(task.id, userCode, false);
   }
 }
 
