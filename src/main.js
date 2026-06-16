@@ -10,14 +10,38 @@ let currentDifficultyFilter = 'all';
 let searchQuery = '';
 let currentTab = 'editor';
 
+let timerInterval = null;
+let secondElapsed = 0;
+
 const taskListContainer = document.querySelector('.task-list');
 const workspaceContainer = document.querySelector('.workspace');
 const STORAGE_KEY = 'junior_code_progress';
 
-function saveProgress(taskId, code, isPassed) {
+function formatTime(totalSeconds) {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+}
+
+function saveProgress(taskId, code, isPassed, timeSpent = null) {
   const progress = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
   const oldStatus = progress[taskId]?.isPassed || false;
-  progress[taskId] = { code, isPassed: isPassed || oldStatus };
+  const oldTime = progress[taskId]?.timeSpent || null;
+
+  let finalTime = oldTime;
+  if (isPassed) {
+    if (oldTime === null || (timeSpent !== null && timeSpent < oldTime)) {
+      finalTime = timeSpent;
+    }
+  } else if (oldTime === null && timeSpent !== null) {
+    finalTime = timeSpent;
+  }
+
+  progress[taskId] = {
+    code: code,
+    isPassed: isPassed || oldStatus,
+    timeSpent: finalTime
+  };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
 }
 
@@ -26,6 +50,28 @@ function getTaskProgress(taskId) {
   return progress[taskId] || null;
 }
 
+function startTimer() {
+  stopTimer();
+  secondElapsed = 0;
+  
+  const timerElement = document.getElementById('task-timer');
+  if (timerElement) timerElement.textContent = formatTime(secondElapsed);
+
+  timerInterval = setInterval(() => {
+    secondElapsed++;
+    const timerDisplay = document.getElementById('task-timer');
+    if (timerDisplay) {
+      timerDisplay.textContent = formatTime(secondElapsed);
+    }
+  }, 1000);
+}
+
+function stopTimer() {
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+}
 
 function renderTaskList() {
   taskListContainer.innerHTML = '';
@@ -81,7 +127,12 @@ function selectTask(taskId) {
   if (activeTask && currentTab === 'editor') {
     workspaceContainer.innerHTML = `
       <div class="task-workspace" style="width: 100%; height: 100%; display: flex; flex-direction: column; gap: 20px;">
-        <h2>${activeTask.title}</h2>
+        <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+          <h2>${activeTask.title}</h2>
+          <div style="background: var(--bg-sidebar); border: 1px solid var(--border-color); padding: 6px 14px; border-radius: 20px; font-family: monospace; font-size: 14px; color: var(--warning); display: flex; align-items: center; gap: 6px;">
+            ⏱ <span id="task-timer">00:00</span>
+          </div>
+        </div>
         <p class="task-description" style="line-height: 1.6;">${activeTask.description}</p>
         <div class="editor-container language-js"></div>
         <button class="btn-submit">Проверить решение</button>
@@ -100,6 +151,8 @@ function selectTask(taskId) {
         
         const savedData = getTaskProgress(activeTask.id);
         jar.updateCode(savedData ? savedData.code : activeTask.starterCode);
+
+        startTimer();
 
         workspaceContainer.querySelector('.btn-submit').addEventListener('click', () => {
           if (jar && activeTask) runTests(activeTask, jar.toString());
@@ -139,16 +192,19 @@ function runTests(task, userCode) {
       resultsList.appendChild(li);
     });
 
-    saveProgress(task.id, userCode, allTestsPassed);
+    if (allTestsPassed) {
+      stopTimer();
+    }
+
+    saveProgress(task.id, userCode, allTestsPassed, secondElapsed);
     renderTaskList();
 
-  } 
-  catch (error) {
+  } catch (error) {
     const li = document.createElement('li');
     li.style.color = '#ef4444';
     li.innerHTML = `<strong>Ошибка:</strong> ${error.message}`;
     resultsList.appendChild(li);
-    saveProgress(task.id, userCode, false);
+    saveProgress(task.id, userCode, false, secondElapsed);
   }
 }
 
@@ -159,9 +215,14 @@ function compareResults(actual, expected) {
 
 function renderProfile() {
   const progress = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
-  const solvedCount = Object.values(progress).filter(p => p.isPassed).length;
+  const solvedTasks = Object.values(progress).filter(p => p.isPassed);
+  const solvedCount = solvedTasks.length;
   const totalTasks = tasks.length;
   const percent = totalTasks > 0 ? Math.round((solvedCount / totalTasks) * 100) : 0;
+
+  const timesArray = solvedTasks.map(p => p.timeSpent).filter(t => t !== null && t > 0);
+  const totalTime = timesArray.reduce((sum, current) => sum + current, 0);
+  const avgTime = timesArray.length > 0 ? Math.round(totalTime / timesArray.length) : 0;
 
   let rank = 'Начинающий (Junior-)';
   if (percent >= 50) rank = 'Уверенный код-боец (Junior)';
@@ -174,7 +235,7 @@ function renderProfile() {
         <p style="color: var(--text-muted);">Твой личный трекер готовности к работе</p>
       </div>
 
-      <div style="background: var(--bg-card); border: 1px solid var(--border-color); padding: 25px; border-radius: 12px; display: flex; flex-direction: column; gap: 15px;">
+      <div style="background: var(--bg-card); border: 1px solid var(--border-color); padding: 25px; border-radius: 12px; display: flex; flex-direction: column; gap: 20px;">
         <div style="display: flex; justify-content: space-between; font-weight: bold;">
           <span>Текущий статус:</span>
           <span style="color: var(--accent);">${rank}</span>
@@ -189,6 +250,17 @@ function renderProfile() {
             <div style="width: ${percent}%; height: 100%; background: var(--success); transition: width 0.3s ease;"></div>
           </div>
         </div>
+
+        <div style="display: flex; gap: 15px; border-top: 1px solid var(--border-color); padding-top: 15px; margin-top: 5px;">
+          <div style="flex: 1; background: var(--bg-main); padding: 12px; border-radius: 8px; text-align: center;">
+            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px; text-transform: uppercase;">Общее время фокуса</div>
+            <div style="font-size: 18px; font-weight: bold; color: var(--text-main); font-family: monospace;">${formatTime(totalTime)}</div>
+          </div>
+          <div style="flex: 1; background: var(--bg-main); padding: 12px; border-radius: 8px; text-align: center;">
+            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px; text-transform: uppercase;">Ср. скорость решения</div>
+            <div style="font-size: 18px; font-weight: bold; color: var(--warning); font-family: monospace;">${avgTime > 0 ? formatTime(avgTime) : '--:--'}</div>
+          </div>
+        </div>
       </div>
 
       <div style="display: flex; flex-direction: column; gap: 10px;">
@@ -200,7 +272,7 @@ function renderProfile() {
           </li>
           <li style="display: flex; align-items: center; gap: 10px;">
             <span style="color: ${percent >= 66 ? 'var(--success)' : 'var(--text-muted)'};">${percent >= 66 ? '✓' : '○'}</span> 
-            Методы перебора массивов (Фильтрация массивов)
+            Методы перебора arrays (Фильтрация массивов)
           </li>
           <li style="display: flex; align-items: center; gap: 10px;">
             <span style="color: ${percent === 100 ? 'var(--success)' : 'var(--text-muted)'};">${percent === 100 ? '✓' : '○'}</span> 
@@ -220,25 +292,15 @@ function switchTab(tabName) {
   });
 
   if (tabName === 'profile') {
-    if (jar) {
-      try {
-        jar.destroy();
-        jar = null;
-      }
-      catch (error) {
-
-      }
-    }
-
+    stopTimer();
+    if (jar) { try { jar.destroy(); jar = null; } catch(e) {} }
     document.querySelectorAll('.task-item').forEach(b => b.classList.remove('active'));
     renderProfile();
-  }
-  else if (tabName === 'editor') {
+  } else if (tabName === 'editor') {
     if (activeTask) {
       selectTask(activeTask.id);
-    }
-    else {
-      workspaceContainer.innerHTML = '<div class="placeholder-content"><h3>Выберите задачу в меню слева</h3></div>'; 
+    } else {
+      workspaceContainer.innerHTML = '<div class="placeholder-content"><h3>Выберите задачу в меню слева</h3></div>';
     }
   }
 }
