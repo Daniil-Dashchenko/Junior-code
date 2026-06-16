@@ -1,7 +1,12 @@
 import { tasks } from "./tasks.js";
+import { CodeJar } from "codejar";
+import Prism from 'prismjs';
 
 const taskListContainer = document.querySelector('.task-list');
 const workspaceContainer = document.querySelector('.workspace');
+
+let jar = null;
+let currentCode = '';
 
 function renderTaskList() {
   taskListContainer.innerHTML = '';
@@ -40,15 +45,37 @@ function selectTask(taskId) {
 
   if (currentTask) {
     workspaceContainer.innerHTML = `
-      <div class="task-workspace" style="width: 100%; height: 100%; display: flex; flex-direction: column; gap: 20px; align-items: flex-start; text-align: left;">
+      <div class="task-workspace" style="width: 100%; height: 100%; display: flex; flex-direction: column; gap: 20px;">
         <h2>${currentTask.title}</h2>
-        <p class="task-description" style="line-height: 1.6; color: var(--text-main);">${currentTask.description}</p>
-        
-        <div class="editor-stub" style="width: 100%; background: var(--bg-card); border: 1px solid var(--border-color); padding: 15px; border-radius: 8px; font-family: monospace;">
-          <pre>${currentTask.starterCode}</pre>
-        </div>
+        <p class="task-description" style="line-height: 1.6;">${currentTask.description}</p>
+        <div class="editor-container language-js"></div>
+        <button class="btn-submit">Проверить решение</button>
       </div>
     `;
+
+    setTimeout(() => {
+      const editorElement = document.querySelector('.editor-container');
+      
+      if (editorElement) {
+        if (jar) {
+          try { jar.destroy(); } catch(e) {}
+        }
+
+        jar = CodeJar(editorElement, withLineNumbers(Prism.highlightElement));
+        jar.updateCode(currentTask.starterCode);
+
+        document.querySelector('.btn-submit').addEventListener('click', () => {
+          const userCode = jar.toString();
+          console.log('Код отправлен на проверку:', userCode);
+        });
+      }
+    }, 0);
+  }
+}
+
+function withLineNumbers(higlight) {
+  return editor => {
+    higlight(editor);
   }
 }
 
