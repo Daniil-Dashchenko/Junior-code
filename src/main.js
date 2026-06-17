@@ -1,4 +1,3 @@
-// main.js
 import { tasks } from './tasks.js';
 import { CodeJar } from 'codejar';
 import Prism from 'prismjs';
@@ -18,10 +17,124 @@ const workspaceContainer = document.querySelector('.workspace');
 
 const PROGRESS_KEY = 'junior_code_progress';
 const CUSTOM_TASKS_KEY = 'junior_code_custom_tasks';
+const ACHIEVEMENTS_KEY = 'junior_code_achievements';
+
+const ACHIEVEMENTS = [
+  {
+    id: 'first-blood',
+    title: '🥇 Первая кровь',
+    description: 'Реши свою самую первую задачу на платформе.'
+  },
+  {
+    id: 'speed-demon',
+    title: '⚡ Демон скорости',
+    description: 'Реши любую задачу быстрее чем за 30 секунд.'
+  },
+  {
+    id: 'night-owl',
+    title: '🦉 Полуночный кодер',
+    description: 'Отправь успешное решение в ночное время (с 22:00 до 06:00).'
+  },
+  {
+    id: 'creator',
+    title: '🛠 На все руки мастер',
+    description: 'Создай свою собственную задачу в конструкторе.'
+  },
+  {
+    id: 'perfectionist',
+    title: '🏆 Перфекционист',
+    description: 'Успешно реши задачу, которую ты создал сам.'
+  }
+];
 
 function getAllTasks() {
   const customTasks = JSON.parse(localStorage.getItem(CUSTOM_TASKS_KEY)) || [];
   return [...tasks, ...customTasks];
+}
+
+function getUnlockedAchievements() {
+  return JSON.parse(localStorage.getItem(ACHIEVEMENTS_KEY)) || [];
+}
+
+function unlockAchievement(achievementId) {
+  const unlocked = getUnlockedAchievements();
+  if (!unlocked.includes(achievementId)) {
+    unlocked.push(achievementId);
+    localStorage.setItem(ACHIEVEMENTS_KEY, JSON.stringify(unlocked));
+
+    const ach = ACHIEVEMENTS.find(a => a.id === achievementId);
+    if (ach) showAchievementToasts(ach);
+  } 
+}
+
+function showAchievementToasts(achievement) {
+  const toast = document.createElement('div');
+  toast.style.position = 'fixed';
+  toast.style.bottom = '20px';
+  toast.style.right = '20px';
+  toast.style.background = 'linear-gradient(135deg, #1e1e38 0%, #2d1b4e 100%)';
+  toast.style.border = '2px solid var(--warning)';
+  toast.style.padding = '15px 20px';
+  toast.style.borderRadius = '10px';
+  toast.style.boxShadow = '0 10px 30px rgba(0,0,0,0.5)';
+  toast.style.zIndex = '9999';
+  toast.style.display = 'flex';
+  toast.style.flexDirection = 'column';
+  toast.style.gap = '5px';
+  toast.style.animation = 'slideIn 0.4s ease forwards';
+  toast.style.color = '#fff';
+
+  toast.innerHTML = `
+    <span style="color: var(--warning); font-weight: bold; font-size: 12px; text-transform: uppercase; letter-spacing: 1px;">🏆 Достижение разблокировано!</span>
+    <span style="font-size: 16px; font-weight: bold; margin-top: 2px;">${achievement.title}</span>
+    <span style="font-size: 13px; color: var(--text-muted);">${achievement.description}</span>
+  `;
+
+  if (!document.getElementById('toast-styles')) {
+    const style = document.createElement('style');
+    style.id = 'toast-styles';
+    style.innerHTML = `
+      @keyframes slideIn {
+        from { transform: translateX(120%); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+      }
+      @keyframes fadeOut {
+        from { opacity: 1; transform: translateY(0); }
+        to { opacity: 0; transform: translateY(20px); }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  document.body.appendChild(toast);
+
+  setTimeout(() => {
+    toast.style.animation = 'fadeOut 0.5s ease forwards';
+    setTimeout(() => toast.remove(), 500);
+  }, 4000);
+}
+
+function checkAchievementsAfterTaskSolved(taskId, timeSpent) {
+  const progress = JSON.parse(localStorage.getItem(PROGRESS_KEY)) || {};
+  const solvedTasks = Object.keys(progress).filter(id => progress[id].isPassed);
+
+  if (solvedTasks.length === 1) {
+    unlockAchievement('first-blood');
+  }
+
+  if (timeSpent !== null && timeSpent < 30) {
+    unlockAchievement('speed-demon');
+  }
+
+  const currentHour = new Date().getHours();
+  if (currentHour >= 22 || currentHour < 6) {
+    unlockAchievement('night-owl');
+  }
+
+  const isCustom = !tasks.some(t => t.id === taskId);
+  if (isCustom) {
+    unlockAchievement('perfectionist');
+  }
 }
 
 function formatTime(totalSeconds) {
@@ -52,6 +165,8 @@ function saveCustomTask(newTask) {
   const customTasks = JSON.parse(localStorage.getItem(CUSTOM_TASKS_KEY)) || [];
   customTasks.push(newTask);
   localStorage.setItem(CUSTOM_TASKS_KEY, JSON.stringify(customTasks));
+
+  unlockAchievement('creator');
 }
 
 function getTaskProgress(taskId) {
@@ -106,7 +221,6 @@ function renderTaskList() {
 
     const savedData = getTaskProgress(task.id);
     const isSolved = savedData ? savedData.isPassed : false;
-
     const isCustom = !tasks.some(t => t.id === task.id);
 
     taskButton.innerHTML = `
@@ -186,9 +300,7 @@ function runTests(task, userCode) {
 
   try {
     const functionNameMatch = task.starterCode.match(/function\s+([a-zA-Z0-9_]+)/);
-    if (!functionNameMatch) {
-      throw new Error('Не удалось определить имя функции из базового шаблона. Убедитесь, что шаблон начинается с конструкции "function имяФункции"');
-    }
+    if (!functionNameMatch) throw new Error('Не удалось определить имя функции.');
     const functionName = functionNameMatch[1];
 
     const getTargetFunction = new Function(`${userCode}; return typeof ${functionName} !== 'undefined' ? ${functionName} : null;`);
@@ -210,9 +322,12 @@ function runTests(task, userCode) {
       resultsList.appendChild(li);
     });
 
-    if (allTestsPassed) stopTimer();
+    if (allTestsPassed) {
+      stopTimer();
+      checkAchievementsAfterTaskSolved(task.id, secondElapsed);
+    }
 
-    saveProgress(task.id, userCode, allTestsPassed, secondsElapsed);
+    saveProgress(task.id, userCode, allTestsPassed, secondElapsed);
     renderTaskList();
 
   } 
@@ -221,7 +336,7 @@ function runTests(task, userCode) {
     li.style.color = '#ef4444';
     li.innerHTML = `<strong>Ошибка:</strong> ${error.message}`;
     resultsList.appendChild(li);
-    saveProgress(task.id, userCode, false, secondsElapsed);
+    saveProgress(task.id, userCode, false, secondElapsed);
   }
 }
 
@@ -241,6 +356,22 @@ function renderProfile() {
   const timesArray = solvedTasks.map(p => p.timeSpent).filter(t => t !== null && t > 0);
   const totalTime = timesArray.reduce((sum, current) => sum + current, 0);
   const avgTime = timesArray.length > 0 ? Math.round(totalTime / timesArray.length) : 0;
+
+  const unlockedList = getUnlockedAchievements();
+
+  let achievementsHTML = '';
+  ACHIEVEMENTS.forEach(ach => {
+    const isUnlocked = unlockedList.includes(ach.id);
+    achievementsHTML += `
+      <div style="background: var(--bg-main); padding: 12px; border-radius: 8px; border: 1px solid ${isUnlocked ? 'var(--warning)' : 'var(--border-color)'}; opacity: ${isUnlocked ? '1' : '0.4'}; display: flex; align-items: center; gap: 15px; transition: all 0.3s;">
+        <div style="font-size: 24px; filter: ${isUnlocked ? 'none' : 'grayscale(100%)'};">${ach.title.split(' ')[0]}</div>
+        <div style="display: flex; flex-direction: column; gap: 2px;">
+          <span style="font-weight: bold; font-size: 13px; color: ${isUnlocked ? 'var(--warning)' : 'var(--text-main)'};">${ach.title.substring(ach.title.indexOf(' ') + 1)}</span>
+          <span style="font-size: 11px; color: var(--text-muted); line-height: 1.3;">${ach.description}</span>
+        </div>
+      </div>
+    `;
+  });
 
   workspaceContainer.innerHTML = `
     <div class="profile-layout" style="width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 30px; align-items: start;">
@@ -278,25 +409,33 @@ function renderProfile() {
             </div>
           </div>
         </div>
+
+        <div style="background: var(--bg-card); border: 1px solid var(--border-color); padding: 25px; border-radius: 12px; display: flex; flex-direction: column; gap: 15px;">
+          <h3 style="display: flex; justify-content: space-between; align-items: center;">
+            🏆 Стена трофеев 
+            <span style="font-size: 12px; color: var(--text-muted); font-weight: normal;">Открыто: ${unlockedList.length} из ${ACHIEVEMENTS.length}</span>
+          </h3>
+          <div style="display: flex; flex-direction: column; gap: 10px;">
+            ${achievementsHTML}
+          </div>
+        </div>
       </div>
 
       <div class="constructor-container" style="background: var(--bg-card); border: 1px solid var(--border-color); padding: 25px; border-radius: 12px; display: flex; flex-direction: column; gap: 15px;">
         <h3 style="margin-bottom: 5px;">🛠 Конструктор задач</h3>
         <form id="create-task-form" style="display: flex; flex-direction: column; gap: 12px;">
-          
           <input type="text" id="new-task-title" placeholder="Название задачи (например: Сумма двух чисел)" required style="width: 100%; padding: 8px 12px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main);">
-          
-          <textarea id="new-task-desc" placeholder="Описание задачи и требований к решению..." required rows="3" style="width: 100%; padding: 8px 12px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); font-family: inherit; resize: vertical;"></textarea>
+          <textarea id="new-task-desc" placeholder="Описание задачи..." required rows="3" style="width: 100%; padding: 8px 12px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); font-family: inherit; resize: vertical;"></textarea>
           
           <div style="display: flex; gap: 10px;">
             <select id="new-task-diff" style="flex: 1; padding: 8px 12px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main);">
               <option value="easy">Сложность: Легко</option>
               <option value="medium">Сложность: Средне</option>
             </select>
-            <input type="text" id="new-task-id" placeholder="Уникальный ID (например: sum-two)" required style="flex: 1; padding: 8px 12px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main);">
+            <input type="text" id="new-task-id" placeholder="Уникальный ID (латиница)" required style="flex: 1; padding: 8px 12px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main);">
           </div>
 
-          <textarea id="new-task-starter" placeholder="Стартовый код функции, например:\nfunction sum(a, b) {\n  // твой код\n}" required rows="4" style="width: 100%; padding: 8px 12px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); font-family: monospace; font-size: 13px;"></textarea>
+          <textarea id="new-task-starter" placeholder="Starter code..." required rows="4" style="width: 100%; padding: 8px 12px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); font-family: monospace; font-size: 13px;"></textarea>
           
           <div style="border-top: 1px solid var(--border-color); padding-top: 10px;">
             <h4 style="margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
@@ -305,13 +444,13 @@ function renderProfile() {
             </h4>
             <div id="constructor-tests-list" style="display: flex; flex-direction: column; gap: 8px; max-height: 150px; overflow-y: auto; padding-right: 5px;">
               <div class="test-fields-group" style="display: flex; gap: 8px;">
-                <input type="text" placeholder="Вход (массив аргументов), ех: [2, 3]" required class="test-input" style="flex: 1; padding: 6px 10px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 4px; color: var(--text-main); font-size: 12px;">
-                <input type="text" placeholder="Ожидание, ех: 5" required class="test-expected" style="flex: 1; padding: 6px 10px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 4px; color: var(--text-main); font-size: 12px;">
+                <input type="text" placeholder="Вход ех: [2, 3]" required class="test-input" style="flex: 1; padding: 6px 10px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 4px; color: var(--text-main); font-size: 12px;">
+                <input type="text" placeholder="Ожидание ех: 5" required class="test-expected" style="flex: 1; padding: 6px 10px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 4px; color: var(--text-main); font-size: 12px;">
               </div>
             </div>
           </div>
 
-          <button type="submit" style="background: var(--success); color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; margin-top: 5px;">🚀 Создать и опубликовать задачу</button>
+          <button type="submit" style="background: var(--success); color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; margin-top: 5px;">🚀 Создать задачу</button>
         </form>
       </div>
 
@@ -325,8 +464,8 @@ function renderProfile() {
     testGroup.style.display = 'flex';
     testGroup.style.gap = '8px';
     testGroup.innerHTML = `
-      <input type="text" placeholder="Вход аргументов, ех: [5, 5]" required class="test-input" style="flex: 1; padding: 6px 10px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 4px; color: var(--text-main); font-size: 12px;">
-      <input type="text" placeholder="Ожидание, ех: 10" required class="test-expected" style="flex: 1; padding: 6px 10px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 4px; color: var(--text-main); font-size: 12px;">
+      <input type="text" placeholder="Вход ех: [5, 5]" required class="test-input" style="flex: 1; padding: 6px 10px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 4px; color: var(--text-main); font-size: 12px;">
+      <input type="text" placeholder="Ожидание ех: 10" required class="test-expected" style="flex: 1; padding: 6px 10px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 4px; color: var(--text-main); font-size: 12px;">
     `;
     testsListContainer.appendChild(testGroup);
     testsListContainer.scrollTop = testsListContainer.scrollHeight;
@@ -334,7 +473,6 @@ function renderProfile() {
 
   document.getElementById('create-task-form').addEventListener('submit', (e) => {
     e.preventDefault();
-
     const title = document.getElementById('new-task-title').value;
     const description = document.getElementById('new-task-desc').value;
     const difficulty = document.getElementById('new-task-diff').value;
@@ -346,24 +484,19 @@ function renderProfile() {
 
     try {
       testGroups.forEach(group => {
-        const inputVal = group.querySelector('.test-input').value;
-        const expectedVal = group.querySelector('.test-expected').value;
-
         tests.push({
-          input: JSON.parse(inputVal),
-          expected: JSON.parse(expectedVal)
+          input: JSON.parse(group.querySelector('.test-input').value),
+          expected: JSON.parse(group.querySelector('.test-expected').value)
         });
       });
 
       const newTask = { id, title, difficulty, description, starterCode, tests };
-
       saveCustomTask(newTask);
       renderTaskList();
       renderProfile();
-
-      alert(`Задача "${title}" успешно создана и добавлена в меню!`);
-    } catch (err) {
-      alert('Ошибка при разборе тестов! Убедитесь, что вы вводите валидный JSON. Пример входа: [2, 3] (обязательно в квадратных скобках), пример ожидания: 5 или "строка"');
+    } 
+    catch (err) {
+      alert('Ошибка при разборе тестов! Убедитесь, что вводите валидный JSON.');
     }
   });
 }
