@@ -1,4 +1,4 @@
-import { tasks } from './tasks.js';
+import { tasks as defaultTasks } from './tasks.js';
 import { CodeJar } from 'codejar';
 import Prism from 'prismjs';
 
@@ -8,9 +8,10 @@ let activeTask = null;
 let currentDifficultyFilter = 'all';
 let searchQuery = '';
 let currentTab = 'editor';
+let activeTaskTab = 'desc';
 
 let timerInterval = null;
-let secondElapsed = 0;
+let secondsElapsed = 0;
 
 const taskListContainer = document.querySelector('.task-list');
 const workspaceContainer = document.querySelector('.workspace');
@@ -18,38 +19,61 @@ const workspaceContainer = document.querySelector('.workspace');
 const PROGRESS_KEY = 'junior_code_progress';
 const CUSTOM_TASKS_KEY = 'junior_code_custom_tasks';
 const ACHIEVEMENTS_KEY = 'junior_code_achievements';
+const SUBMISSIONS_KEY = 'junior_code_submissions';
 
 const ACHIEVEMENTS = [
-  {
-    id: 'first-blood',
-    title: '🥇 Первая кровь',
-    description: 'Реши свою самую первую задачу на платформе.'
-  },
-  {
-    id: 'speed-demon',
-    title: '⚡ Демон скорости',
-    description: 'Реши любую задачу быстрее чем за 30 секунд.'
-  },
-  {
-    id: 'night-owl',
-    title: '🦉 Полуночный кодер',
-    description: 'Отправь успешное решение в ночное время (с 22:00 до 06:00).'
-  },
-  {
-    id: 'creator',
-    title: '🛠 На все руки мастер',
-    description: 'Создай свою собственную задачу в конструкторе.'
-  },
-  {
-    id: 'perfectionist',
-    title: '🏆 Перфекционист',
-    description: 'Успешно реши задачу, которую ты создал сам.'
-  }
+  { id: 'first-blood', title: '🥇 Первая кровь', description: 'Реши свою самую первую задачу на платформе.' },
+  { id: 'speed-demon', title: '⚡ Демон скорости', description: 'Реши любую задачу быстрее чем за 30 секунд.' },
+  { id: 'night-owl', title: '🦉 Полуночный кодер', description: 'Отправь успешное решение в ночное время (с 22:00 до 06:00).' },
+  { id: 'creator', title: '🛠 На все руки мастер', description: 'Создай свою собственную задачу в конструкторе.' },
+  { id: 'perfectionist', title: '🏆 Перфекционист', description: 'Успешно реши задачу, которую ты создал сам.' }
 ];
 
 function getAllTasks() {
   const customTasks = JSON.parse(localStorage.getItem(CUSTOM_TASKS_KEY)) || [];
-  return [...tasks, ...customTasks];
+  return [...defaultTasks, ...customTasks];
+}
+
+function saveProgress(taskId, code, isPassed, timeSpent = null) {
+  const progress = JSON.parse(localStorage.getItem(PROGRESS_KEY)) || {};
+  const oldStatus = progress[taskId]?.isPassed || false;
+  const oldTime = progress[taskId]?.timeSpent || null;
+
+  let finalTime = oldTime;
+  if (isPassed) {
+    if (oldTime === null || (timeSpent !== null && timeSpent < oldTime)) {
+      finalTime = timeSpent;
+    }
+  } else if (oldTime === null && timeSpent !== null) {
+    finalTime = timeSpent;
+  }
+
+  progress[taskId] = { code, isPassed: isPassed || oldStatus, timeSpent: finalTime };
+  localStorage.setItem(PROGRESS_KEY, JSON.stringify(progress));
+}
+
+function getTaskProgress(taskId) {
+  const progress = JSON.parse(localStorage.getItem(PROGRESS_KEY)) || {};
+  return progress[taskId] || null;
+}
+
+function getSubmissions(taskId) {
+  const allSubmissions = JSON.parse(localStorage.getItem(SUBMISSIONS_KEY)) || {};
+  return allSubmissions[taskId] || [];
+}
+
+function saveSubmission(taskId, code, isPassed) {
+  const allSubmissions = JSON.parse(localStorage.getItem(SUBMISSIONS_KEY)) || {};
+  if (!allSubmissions[taskId]) allSubmissions[taskId] = [];
+
+  const newSubmission = {
+    timestamp: new Date().toLocaleString('ru-RU'),
+    code: code,
+    isPassed: isPassed
+  };
+
+  allSubmissions[taskId].unshift(newSubmission);
+  localStorage.setItem(SUBMISSIONS_KEY, JSON.stringify(allSubmissions));
 }
 
 function getUnlockedAchievements() {
@@ -61,13 +85,12 @@ function unlockAchievement(achievementId) {
   if (!unlocked.includes(achievementId)) {
     unlocked.push(achievementId);
     localStorage.setItem(ACHIEVEMENTS_KEY, JSON.stringify(unlocked));
-
     const ach = ACHIEVEMENTS.find(a => a.id === achievementId);
-    if (ach) showAchievementToasts(ach);
-  } 
+    if (ach) showAchievementToast(ach);
+  }
 }
 
-function showAchievementToasts(achievement) {
+function showAchievementToast(achievement) {
   const toast = document.createElement('div');
   toast.style.position = 'fixed';
   toast.style.bottom = '20px';
@@ -94,20 +117,13 @@ function showAchievementToasts(achievement) {
     const style = document.createElement('style');
     style.id = 'toast-styles';
     style.innerHTML = `
-      @keyframes slideIn {
-        from { transform: translateX(120%); opacity: 0; }
-        to { transform: translateX(0); opacity: 1; }
-      }
-      @keyframes fadeOut {
-        from { opacity: 1; transform: translateY(0); }
-        to { opacity: 0; transform: translateY(20px); }
-      }
+      @keyframes slideIn { from { transform: translateX(120%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+      @keyframes fadeOut { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(20px); } }
     `;
     document.head.appendChild(style);
   }
 
   document.body.appendChild(toast);
-
   setTimeout(() => {
     toast.style.animation = 'fadeOut 0.5s ease forwards';
     setTimeout(() => toast.remove(), 500);
@@ -118,76 +134,33 @@ function checkAchievementsAfterTaskSolved(taskId, timeSpent) {
   const progress = JSON.parse(localStorage.getItem(PROGRESS_KEY)) || {};
   const solvedTasks = Object.keys(progress).filter(id => progress[id].isPassed);
 
-  if (solvedTasks.length === 1) {
-    unlockAchievement('first-blood');
-  }
-
-  if (timeSpent !== null && timeSpent < 30) {
-    unlockAchievement('speed-demon');
-  }
-
+  if (solvedTasks.length === 1) unlockAchievement('first-blood');
+  if (timeSpent !== null && timeSpent < 30) unlockAchievement('speed-demon');
+  
   const currentHour = new Date().getHours();
-  if (currentHour >= 22 || currentHour < 6) {
-    unlockAchievement('night-owl');
-  }
+  if (currentHour >= 22 || currentHour < 6) unlockAchievement('night-owl');
 
-  const isCustom = !tasks.some(t => t.id === taskId);
-  if (isCustom) {
-    unlockAchievement('perfectionist');
-  }
-}
-
-function formatTime(totalSeconds) {
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-}
-
-function saveProgress(taskId, code, isPassed, timeSpent = null) {
-  const progress = JSON.parse(localStorage.getItem(PROGRESS_KEY)) || {};
-  const oldStatus = progress[taskId]?.isPassed || false;
-  const oldTime = progress[taskId]?.timeSpent || null;
-
-  let finalTime = oldTime;
-  if (isPassed) {
-    if (oldTime === null || (timeSpent !== null && timeSpent < oldTime)) {
-      finalTime = timeSpent;
-    }
-  } else if (oldTime === null && timeSpent !== null) {
-    finalTime = timeSpent;
-  }
-
-  progress[taskId] = { code, isPassed: isPassed || oldStatus, timeSpent: finalTime };
-  localStorage.setItem(PROGRESS_KEY, JSON.stringify(progress));
+  const isCustom = !defaultTasks.some(t => t.id === taskId);
+  if (isCustom) unlockAchievement('perfectionist');
 }
 
 function saveCustomTask(newTask) {
   const customTasks = JSON.parse(localStorage.getItem(CUSTOM_TASKS_KEY)) || [];
   customTasks.push(newTask);
   localStorage.setItem(CUSTOM_TASKS_KEY, JSON.stringify(customTasks));
-
   unlockAchievement('creator');
 }
 
-function getTaskProgress(taskId) {
-  const progress = JSON.parse(localStorage.getItem(PROGRESS_KEY)) || {};
-  return progress[taskId] || null;
-}
-
-
 function startTimer() {
   stopTimer();
-  secondElapsed = 0;
-  
+  secondsElapsed = 0;
   const timerElement = document.getElementById('task-timer');
-  if (timerElement) timerElement.textContent = formatTime(secondElapsed);
+  if (timerElement) timerElement.textContent = formatTime(secondsElapsed);
 
   timerInterval = setInterval(() => {
-    secondElapsed++;
+    secondsElapsed++;
     const timerDisplay = document.getElementById('task-timer');
-    if (timerDisplay) {
-      timerDisplay.textContent = formatTime(secondElapsed);
-    }
+    if (timerDisplay) timerDisplay.textContent = formatTime(secondsElapsed);
   }, 1000);
 }
 
@@ -196,6 +169,12 @@ function stopTimer() {
     clearInterval(timerInterval);
     timerInterval = null;
   }
+}
+
+function formatTime(totalSeconds) {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 }
 
 function renderTaskList() {
@@ -221,7 +200,7 @@ function renderTaskList() {
 
     const savedData = getTaskProgress(task.id);
     const isSolved = savedData ? savedData.isPassed : false;
-    const isCustom = !tasks.some(t => t.id === task.id);
+    const isCustom = !defaultTasks.some(t => t.id === task.id);
 
     taskButton.innerHTML = `
       <span class="task-status ${isSolved ? 'status-success' : ''}" id="status-${task.id}">
@@ -252,40 +231,123 @@ function selectTask(taskId) {
   if (activeBtn) activeBtn.classList.add('active');
 
   if (activeTask && currentTab === 'editor') {
-    workspaceContainer.innerHTML = `
-      <div class="task-workspace" style="width: 100%; height: 100%; display: flex; flex-direction: column; gap: 20px;">
+
+    activeTaskTab = 'desc';
+
+    renderTaskWorkspaceStructure();
+    initCodeJarEditor();
+    startTimer();
+  }
+}
+
+function renderTaskWorkspaceStructure() {
+  workspaceContainer.innerHTML = `
+    <div class="task-workspace" style="width: 100%; height: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+      
+      <div style="display: flex; flex-direction: column; gap: 15px; border-right: 1px solid var(--border-color); padding-right: 20px;">
+        
+        <div style="display: flex; gap: 10px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px;">
+          <button class="task-tab-btn ${activeTaskTab === 'desc' ? 'active' : ''}" id="task-tab-desc" style="background: none; border: none; color: ${activeTaskTab === 'desc' ? 'var(--accent)' : 'var(--text-muted)'}; font-weight: bold; cursor: pointer; padding: 5px 10px;">📝 Условие</button>
+          <button class="task-tab-btn ${activeTaskTab === 'history' ? 'active' : ''}" id="task-tab-history" style="background: none; border: none; color: ${activeTaskTab === 'history' ? 'var(--accent)' : 'var(--text-muted)'}; font-weight: bold; cursor: pointer; padding: 5px 10px;">📜 История решений</button>
+        </div>
+
+        <div id="task-left-content" style="flex: 1; overflow-y: auto;">
+          </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 15px;">
         <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-          <h2>${activeTask.title}</h2>
+          <h2 style="font-size: 20px;">${activeTask.title}</h2>
           <div style="background: var(--bg-sidebar); border: 1px solid var(--border-color); padding: 6px 14px; border-radius: 20px; font-family: monospace; font-size: 14px; color: var(--warning); display: flex; align-items: center; gap: 6px;">
             ⏱ <span id="task-timer">00:00</span>
           </div>
         </div>
-        <p class="task-description" style="line-height: 1.6; white-space: pre-line;">${activeTask.description}</p>
-        <div class="editor-container language-js"></div>
+        
+        <div class="editor-container language-js" style="flex: 1; min-height: 250px;"></div>
         <button class="btn-submit">Проверить решение</button>
+        
         <div class="test-results" style="margin-top: 10px; display: none; background: var(--bg-sidebar); border: 1px solid var(--border-color); padding: 15px; border-radius: 8px;">
           <h3>Результаты тестов:</h3>
           <ul class="results-list" style="list-style: none; margin-top: 10px; display: flex; flex-direction: column; gap: 8px;"></ul>
         </div>
       </div>
-    `;
 
-    setTimeout(() => {
-      const editorElement = workspaceContainer.querySelector('.editor-container');
-      if (editorElement) {
-        if (jar) { try { jar.destroy(); } catch(e) {} }
-        jar = CodeJar(editorElement, editor => Prism.highlightElement(editor));
-        
-        const savedData = getTaskProgress(activeTask.id);
-        jar.updateCode(savedData ? savedData.code : activeTask.starterCode);
+    </div>
+  `;
 
-        startTimer();
+  document.getElementById('task-tab-desc').addEventListener('click', () => switchTaskTab('desc'));
+  document.getElementById('task-tab-history').addEventListener('click', () => switchTaskTab('history'));
 
-        workspaceContainer.querySelector('.btn-submit').addEventListener('click', () => {
-          if (jar && activeTask) runTests(activeTask, jar.toString());
-        });
-      }
-    }, 0);
+  updateTaskLeftContent();
+}
+
+function switchTaskTab(tab) {
+  activeTaskTab = tab;
+  document.querySelectorAll('.task-tab-btn').forEach(btn => {
+    btn.style.color = 'var(--text-muted)';
+  });
+  const activeBtn = document.getElementById(`task-tab-${tab}`);
+  if (activeBtn) activeBtn.style.color = 'var(--accent)';
+
+  updateTaskLeftContent();
+}
+
+function updateTaskLeftContent() {
+  const container = document.getElementById('task-left-content');
+  if (!container || !activeTask) return;
+
+  if (activeTaskTab === 'desc') {
+    container.innerHTML = `<p class="task-description" style="line-height: 1.6; white-space: pre-line; color: var(--text-main);">${activeTask.description}</p>`;
+  } else if (activeTaskTab === 'history') {
+    const subs = getSubmissions(activeTask.id);
+
+    if (subs.length === 0) {
+      container.innerHTML = `<div style="color: var(--text-muted); font-size: 13px; text-align: center; padding-top: 30px;">Вы еще не отправляли решения для этой задачи</div>`;
+      return;
+    }
+
+    let historyHTML = '<div style="display: flex; flex-direction: column; gap: 10px;">';
+    subs.forEach((sub, index) => {
+      historyHTML += `
+        <div class="submission-item" data-index="${index}" style="background: var(--bg-sidebar); border: 1px solid var(--border-color); padding: 12px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; transition: transform 0.2s;">
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <span style="font-size: 13px; font-weight: bold; color: ${sub.isPassed ? 'var(--success)' : '#ef4444'}">
+              ${sub.isPassed ? '● Пройдено успешно' : '❌ Ошибка в тестах'}
+            </span>
+            <span style="font-size: 11px; color: var(--text-muted);">${sub.timestamp}</span>
+          </div>
+          <button style="background: var(--bg-main); border: 1px solid var(--border-color); color: var(--text-main); padding: 4px 10px; font-size: 11px; border-radius: 4px; cursor: pointer;">Вставить код</button>
+        </div>
+      `;
+    });
+    historyHTML += '</div>';
+    container.innerHTML = historyHTML;
+
+    container.querySelectorAll('.submission-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const idx = item.dataset.index;
+        const selectedCode = subs[idx].code;
+        if (jar) {
+          jar.updateCode(selectedCode);
+          switchTaskTab('desc');
+        }
+      });
+    });
+  }
+}
+
+function initCodeJarEditor() {
+  const editorElement = workspaceContainer.querySelector('.editor-container');
+  if (editorElement) {
+    if (jar) { try { jar.destroy(); } catch(e) {} }
+    jar = CodeJar(editorElement, editor => Prism.highlightElement(editor));
+    
+    const savedData = getTaskProgress(activeTask.id);
+    jar.updateCode(savedData ? savedData.code : activeTask.starterCode);
+
+    workspaceContainer.querySelector('.btn-submit').addEventListener('click', () => {
+      if (jar && activeTask) runTests(activeTask, jar.toString());
+    });
   }
 }
 
@@ -324,19 +386,26 @@ function runTests(task, userCode) {
 
     if (allTestsPassed) {
       stopTimer();
-      checkAchievementsAfterTaskSolved(task.id, secondElapsed);
+      checkAchievementsAfterTaskSolved(task.id, secondsElapsed);
     }
 
-    saveProgress(task.id, userCode, allTestsPassed, secondElapsed);
+    saveSubmission(task.id, userCode, allTestsPassed);
+
+    saveProgress(task.id, userCode, allTestsPassed, secondsElapsed);
     renderTaskList();
 
-  } 
-  catch (error) {
+    if (activeTaskTab === 'history') updateTaskLeftContent();
+
+  } catch (error) {
     const li = document.createElement('li');
     li.style.color = '#ef4444';
     li.innerHTML = `<strong>Ошибка:</strong> ${error.message}`;
     resultsList.appendChild(li);
-    saveProgress(task.id, userCode, false, secondElapsed);
+
+    saveSubmission(task.id, userCode, false);
+    saveProgress(task.id, userCode, false, secondsElapsed);
+    
+    if (activeTaskTab === 'history') updateTaskLeftContent();
   }
 }
 
@@ -363,7 +432,7 @@ function renderProfile() {
   ACHIEVEMENTS.forEach(ach => {
     const isUnlocked = unlockedList.includes(ach.id);
     achievementsHTML += `
-      <div style="background: var(--bg-main); padding: 12px; border-radius: 8px; border: 1px solid ${isUnlocked ? 'var(--warning)' : 'var(--border-color)'}; opacity: ${isUnlocked ? '1' : '0.4'}; display: flex; align-items: center; gap: 15px; transition: all 0.3s;">
+      <div style="background: var(--bg-main); padding: 12px; border-radius: 8px; border: 1px solid ${isUnlocked ? 'var(--warning)' : 'var(--border-color)'}; opacity: ${isUnlocked ? '1' : '0.4'}; display: flex; align-items: center; gap: 15px;">
         <div style="font-size: 24px; filter: ${isUnlocked ? 'none' : 'grayscale(100%)'};">${ach.title.split(' ')[0]}</div>
         <div style="display: flex; flex-direction: column; gap: 2px;">
           <span style="font-weight: bold; font-size: 13px; color: ${isUnlocked ? 'var(--warning)' : 'var(--text-main)'};">${ach.title.substring(ach.title.indexOf(' ') + 1)}</span>
@@ -375,7 +444,6 @@ function renderProfile() {
 
   workspaceContainer.innerHTML = `
     <div class="profile-layout" style="width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 30px; align-items: start;">
-      
       <div class="profile-container" style="display: flex; flex-direction: column; gap: 25px;">
         <div>
           <h2 style="margin-bottom: 5px;">Кабинет стажёра</h2>
@@ -387,7 +455,6 @@ function renderProfile() {
             <span>Статус:</span>
             <span style="color: var(--accent);">${percent === 100 ? 'Junior+' : (percent >= 50 ? 'Junior' : 'Junior-')}</span>
           </div>
-          
           <div>
             <div style="display: flex; justify-content: space-between; font-size: 13px; color: var(--text-muted); margin-bottom: 5px;">
               <span>Выполнено задач: ${solvedCount} из ${totalTasks}</span>
@@ -397,7 +464,6 @@ function renderProfile() {
               <div style="width: ${percent}%; height: 100%; background: var(--success); transition: width 0.3s ease;"></div>
             </div>
           </div>
-
           <div style="display: flex; gap: 15px; border-top: 1px solid var(--border-color); padding-top: 15px;">
             <div style="flex: 1; background: var(--bg-main); padding: 12px; border-radius: 8px; text-align: center;">
               <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px; text-transform: uppercase;">Фокус</div>
@@ -424,7 +490,7 @@ function renderProfile() {
       <div class="constructor-container" style="background: var(--bg-card); border: 1px solid var(--border-color); padding: 25px; border-radius: 12px; display: flex; flex-direction: column; gap: 15px;">
         <h3 style="margin-bottom: 5px;">🛠 Конструктор задач</h3>
         <form id="create-task-form" style="display: flex; flex-direction: column; gap: 12px;">
-          <input type="text" id="new-task-title" placeholder="Название задачи (например: Сумма двух чисел)" required style="width: 100%; padding: 8px 12px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main);">
+          <input type="text" id="new-task-title" placeholder="Название задачи" required style="width: 100%; padding: 8px 12px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main);">
           <textarea id="new-task-desc" placeholder="Описание задачи..." required rows="3" style="width: 100%; padding: 8px 12px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); font-family: inherit; resize: vertical;"></textarea>
           
           <div style="display: flex; gap: 10px;">
@@ -453,7 +519,6 @@ function renderProfile() {
           <button type="submit" style="background: var(--success); color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; margin-top: 5px;">🚀 Создать задачу</button>
         </form>
       </div>
-
     </div>
   `;
 
@@ -494,8 +559,7 @@ function renderProfile() {
       saveCustomTask(newTask);
       renderTaskList();
       renderProfile();
-    } 
-    catch (err) {
+    } catch (err) {
       alert('Ошибка при разборе тестов! Убедитесь, что вводите валидный JSON.');
     }
   });
