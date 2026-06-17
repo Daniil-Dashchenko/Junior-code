@@ -15,7 +15,14 @@ let secondElapsed = 0;
 
 const taskListContainer = document.querySelector('.task-list');
 const workspaceContainer = document.querySelector('.workspace');
-const STORAGE_KEY = 'junior_code_progress';
+
+const PROGRESS_KEY = 'junior_code_progress';
+const CUSTOM_TASKS_KEY = 'junior_code_custom_tasks';
+
+function getAllTasks() {
+  const customTasks = JSON.parse(localStorage.getItem(CUSTOM_TASKS_KEY)) || [];
+  return [...tasks, ...customTasks];
+}
 
 function formatTime(totalSeconds) {
   const minutes = Math.floor(totalSeconds / 60);
@@ -24,7 +31,7 @@ function formatTime(totalSeconds) {
 }
 
 function saveProgress(taskId, code, isPassed, timeSpent = null) {
-  const progress = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
+  const progress = JSON.parse(localStorage.getItem(PROGRESS_KEY)) || {};
   const oldStatus = progress[taskId]?.isPassed || false;
   const oldTime = progress[taskId]?.timeSpent || null;
 
@@ -37,18 +44,21 @@ function saveProgress(taskId, code, isPassed, timeSpent = null) {
     finalTime = timeSpent;
   }
 
-  progress[taskId] = {
-    code: code,
-    isPassed: isPassed || oldStatus,
-    timeSpent: finalTime
-  };
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
+  progress[taskId] = { code, isPassed: isPassed || oldStatus, timeSpent: finalTime };
+  localStorage.setItem(PROGRESS_KEY, JSON.stringify(progress));
+}
+
+function saveCustomTask(newTask) {
+  const customTasks = JSON.parse(localStorage.getItem(CUSTOM_TASKS_KEY)) || [];
+  customTasks.push(newTask);
+  localStorage.setItem(CUSTOM_TASKS_KEY, JSON.stringify(customTasks));
 }
 
 function getTaskProgress(taskId) {
-  const progress = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
+  const progress = JSON.parse(localStorage.getItem(PROGRESS_KEY)) || {};
   return progress[taskId] || null;
 }
+
 
 function startTimer() {
   stopTimer();
@@ -75,8 +85,9 @@ function stopTimer() {
 
 function renderTaskList() {
   taskListContainer.innerHTML = '';
+  const allTasks = getAllTasks();
 
-  const filteredTasks = tasks.filter(task => {
+  const filteredTasks = allTasks.filter(task => {
     const matchesDifficulty = currentDifficultyFilter === 'all' || task.difficulty === currentDifficultyFilter;
     const matchesSearch = task.title.toLowerCase().includes(searchQuery.toLowerCase());
     return matchesDifficulty && matchesSearch;
@@ -96,12 +107,14 @@ function renderTaskList() {
     const savedData = getTaskProgress(task.id);
     const isSolved = savedData ? savedData.isPassed : false;
 
+    const isCustom = !tasks.some(t => t.id === task.id);
+
     taskButton.innerHTML = `
       <span class="task-status ${isSolved ? 'status-success' : ''}" id="status-${task.id}">
         ${isSolved ? '✓' : ''}
       </span>
       <div class="task-info">
-        <span class="task-title">${task.title}</span>
+        <span class="task-title">${task.title} ${isCustom ? '<small style="color:var(--warning); font-size:10px;">(Своя)</small>' : ''}</span>
         <span class="task-difficulty ${task.difficulty}">
           ${task.difficulty === 'easy' ? 'Легко' : 'Средне'}
         </span>
@@ -117,12 +130,12 @@ function renderTaskList() {
 }
 
 function selectTask(taskId) {
-  document.querySelectorAll('.task-item').forEach(button => {
-    button.classList.remove('active');
-    if (button.dataset.id === taskId) button.classList.add('active');
-  });
+  document.querySelectorAll('.task-item').forEach(button => button.classList.remove('active'));
+  const allTasks = getAllTasks();
+  activeTask = allTasks.find(task => task.id === taskId);
 
-  activeTask = tasks.find(task => task.id === taskId);
+  const activeBtn = taskListContainer.querySelector(`[data-id="${taskId}"]`);
+  if (activeBtn) activeBtn.classList.add('active');
 
   if (activeTask && currentTab === 'editor') {
     workspaceContainer.innerHTML = `
@@ -133,7 +146,7 @@ function selectTask(taskId) {
             ⏱ <span id="task-timer">00:00</span>
           </div>
         </div>
-        <p class="task-description" style="line-height: 1.6;">${activeTask.description}</p>
+        <p class="task-description" style="line-height: 1.6; white-space: pre-line;">${activeTask.description}</p>
         <div class="editor-container language-js"></div>
         <button class="btn-submit">Проверить решение</button>
         <div class="test-results" style="margin-top: 10px; display: none; background: var(--bg-sidebar); border: 1px solid var(--border-color); padding: 15px; border-radius: 8px;">
@@ -172,7 +185,12 @@ function runTests(task, userCode) {
   let allTestsPassed = true;
 
   try {
-    const functionName = task.id === 'reverse-string' ? 'reverseString' : (task.id === 'filter-array' ? 'filterPositive' : 'factorial');
+    const functionNameMatch = task.starterCode.match(/function\s+([a-zA-Z0-9_]+)/);
+    if (!functionNameMatch) {
+      throw new Error('Не удалось определить имя функции из базового шаблона. Убедитесь, что шаблон начинается с конструкции "function имяФункции"');
+    }
+    const functionName = functionNameMatch[1];
+
     const getTargetFunction = new Function(`${userCode}; return typeof ${functionName} !== 'undefined' ? ${functionName} : null;`);
     const userFunction = getTargetFunction();
 
@@ -192,19 +210,18 @@ function runTests(task, userCode) {
       resultsList.appendChild(li);
     });
 
-    if (allTestsPassed) {
-      stopTimer();
-    }
+    if (allTestsPassed) stopTimer();
 
-    saveProgress(task.id, userCode, allTestsPassed, secondElapsed);
+    saveProgress(task.id, userCode, allTestsPassed, secondsElapsed);
     renderTaskList();
 
-  } catch (error) {
+  } 
+  catch (error) {
     const li = document.createElement('li');
     li.style.color = '#ef4444';
     li.innerHTML = `<strong>Ошибка:</strong> ${error.message}`;
     resultsList.appendChild(li);
-    saveProgress(task.id, userCode, false, secondElapsed);
+    saveProgress(task.id, userCode, false, secondsElapsed);
   }
 }
 
@@ -214,74 +231,141 @@ function compareResults(actual, expected) {
 }
 
 function renderProfile() {
-  const progress = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
+  const progress = JSON.parse(localStorage.getItem(PROGRESS_KEY)) || {};
+  const allTasks = getAllTasks();
   const solvedTasks = Object.values(progress).filter(p => p.isPassed);
   const solvedCount = solvedTasks.length;
-  const totalTasks = tasks.length;
+  const totalTasks = allTasks.length;
   const percent = totalTasks > 0 ? Math.round((solvedCount / totalTasks) * 100) : 0;
 
   const timesArray = solvedTasks.map(p => p.timeSpent).filter(t => t !== null && t > 0);
   const totalTime = timesArray.reduce((sum, current) => sum + current, 0);
   const avgTime = timesArray.length > 0 ? Math.round(totalTime / timesArray.length) : 0;
 
-  let rank = 'Начинающий (Junior-)';
-  if (percent >= 50) rank = 'Уверенный код-боец (Junior)';
-  if (percent === 100) rank = 'Готов к стажировке (Junior+)';
-
   workspaceContainer.innerHTML = `
-    <div class="profile-container" style="width: 100%; max-width: 600px; display: flex; flex-direction: column; gap: 30px; text-align: left; align-self: flex-start;">
-      <div>
-        <h2 style="margin-bottom: 5px;">Кабинет стажёра</h2>
-        <p style="color: var(--text-muted);">Твой личный трекер готовности к работе</p>
-      </div>
-
-      <div style="background: var(--bg-card); border: 1px solid var(--border-color); padding: 25px; border-radius: 12px; display: flex; flex-direction: column; gap: 20px;">
-        <div style="display: flex; justify-content: space-between; font-weight: bold;">
-          <span>Текущий статус:</span>
-          <span style="color: var(--accent);">${rank}</span>
-        </div>
-        
+    <div class="profile-layout" style="width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 30px; align-items: start;">
+      
+      <div class="profile-container" style="display: flex; flex-direction: column; gap: 25px;">
         <div>
-          <div style="display: flex; justify-content: space-between; font-size: 13px; color: var(--text-muted); margin-bottom: 5px;">
-            <span>Выполнено задач: ${solvedCount} из ${totalTasks}</span>
-            <span>${percent}%</span>
-          </div>
-          <div style="width: 100%; height: 10px; background: var(--bg-main); border-radius: 5px; overflow: hidden;">
-            <div style="width: ${percent}%; height: 100%; background: var(--success); transition: width 0.3s ease;"></div>
-          </div>
+          <h2 style="margin-bottom: 5px;">Кабинет стажёра</h2>
+          <p style="color: var(--text-muted);">Твой личный трекер готовности к работе</p>
         </div>
 
-        <div style="display: flex; gap: 15px; border-top: 1px solid var(--border-color); padding-top: 15px; margin-top: 5px;">
-          <div style="flex: 1; background: var(--bg-main); padding: 12px; border-radius: 8px; text-align: center;">
-            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px; text-transform: uppercase;">Общее время фокуса</div>
-            <div style="font-size: 18px; font-weight: bold; color: var(--text-main); font-family: monospace;">${formatTime(totalTime)}</div>
+        <div style="background: var(--bg-card); border: 1px solid var(--border-color); padding: 25px; border-radius: 12px; display: flex; flex-direction: column; gap: 20px;">
+          <div style="display: flex; justify-content: space-between; font-weight: bold;">
+            <span>Статус:</span>
+            <span style="color: var(--accent);">${percent === 100 ? 'Junior+' : (percent >= 50 ? 'Junior' : 'Junior-')}</span>
           </div>
-          <div style="flex: 1; background: var(--bg-main); padding: 12px; border-radius: 8px; text-align: center;">
-            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px; text-transform: uppercase;">Ср. скорость решения</div>
-            <div style="font-size: 18px; font-weight: bold; color: var(--warning); font-family: monospace;">${avgTime > 0 ? formatTime(avgTime) : '--:--'}</div>
+          
+          <div>
+            <div style="display: flex; justify-content: space-between; font-size: 13px; color: var(--text-muted); margin-bottom: 5px;">
+              <span>Выполнено задач: ${solvedCount} из ${totalTasks}</span>
+              <span>${percent}%</span>
+            </div>
+            <div style="width: 100%; height: 10px; background: var(--bg-main); border-radius: 5px; overflow: hidden;">
+              <div style="width: ${percent}%; height: 100%; background: var(--success); transition: width 0.3s ease;"></div>
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 15px; border-top: 1px solid var(--border-color); padding-top: 15px;">
+            <div style="flex: 1; background: var(--bg-main); padding: 12px; border-radius: 8px; text-align: center;">
+              <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px; text-transform: uppercase;">Фокус</div>
+              <div style="font-size: 16px; font-weight: bold; font-family: monospace;">${formatTime(totalTime)}</div>
+            </div>
+            <div style="flex: 1; background: var(--bg-main); padding: 12px; border-radius: 8px; text-align: center;">
+              <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px; text-transform: uppercase;">Ср. скорость</div>
+              <div style="font-size: 16px; font-weight: bold; color: var(--warning); font-family: monospace;">${avgTime > 0 ? formatTime(avgTime) : '--:--'}</div>
+            </div>
           </div>
         </div>
       </div>
 
-      <div style="display: flex; flex-direction: column; gap: 10px;">
-        <h3>Чек-лист навыков</h3>
-        <ul style="list-style: none; display: flex; flex-direction: column; gap: 8px; font-size: 14px;">
-          <li style="display: flex; align-items: center; gap: 10px;">
-            <span style="color: ${percent >= 33 ? 'var(--success)' : 'var(--text-muted)'};">${percent >= 33 ? '✓' : '○'}</span> 
-            Базовые алгоритмы и строки (Разворот строки)
-          </li>
-          <li style="display: flex; align-items: center; gap: 10px;">
-            <span style="color: ${percent >= 66 ? 'var(--success)' : 'var(--text-muted)'};">${percent >= 66 ? '✓' : '○'}</span> 
-            Методы перебора arrays (Фильтрация массивов)
-          </li>
-          <li style="display: flex; align-items: center; gap: 10px;">
-            <span style="color: ${percent === 100 ? 'var(--success)' : 'var(--text-muted)'};">${percent === 100 ? '✓' : '○'}</span> 
-            Математическая логика и рекурсия (Факториал)
-          </li>
-        </ul>
+      <div class="constructor-container" style="background: var(--bg-card); border: 1px solid var(--border-color); padding: 25px; border-radius: 12px; display: flex; flex-direction: column; gap: 15px;">
+        <h3 style="margin-bottom: 5px;">🛠 Конструктор задач</h3>
+        <form id="create-task-form" style="display: flex; flex-direction: column; gap: 12px;">
+          
+          <input type="text" id="new-task-title" placeholder="Название задачи (например: Сумма двух чисел)" required style="width: 100%; padding: 8px 12px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main);">
+          
+          <textarea id="new-task-desc" placeholder="Описание задачи и требований к решению..." required rows="3" style="width: 100%; padding: 8px 12px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); font-family: inherit; resize: vertical;"></textarea>
+          
+          <div style="display: flex; gap: 10px;">
+            <select id="new-task-diff" style="flex: 1; padding: 8px 12px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main);">
+              <option value="easy">Сложность: Легко</option>
+              <option value="medium">Сложность: Средне</option>
+            </select>
+            <input type="text" id="new-task-id" placeholder="Уникальный ID (например: sum-two)" required style="flex: 1; padding: 8px 12px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main);">
+          </div>
+
+          <textarea id="new-task-starter" placeholder="Стартовый код функции, например:\nfunction sum(a, b) {\n  // твой код\n}" required rows="4" style="width: 100%; padding: 8px 12px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); font-family: monospace; font-size: 13px;"></textarea>
+          
+          <div style="border-top: 1px solid var(--border-color); padding-top: 10px;">
+            <h4 style="margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+              Тест-кейсы:
+              <button type="button" id="add-test-btn" style="background: var(--accent); border: none; color: white; padding: 4px 8px; font-size: 11px; border-radius: 4px; cursor: pointer;">+ Добавить тест</button>
+            </h4>
+            <div id="constructor-tests-list" style="display: flex; flex-direction: column; gap: 8px; max-height: 150px; overflow-y: auto; padding-right: 5px;">
+              <div class="test-fields-group" style="display: flex; gap: 8px;">
+                <input type="text" placeholder="Вход (массив аргументов), ех: [2, 3]" required class="test-input" style="flex: 1; padding: 6px 10px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 4px; color: var(--text-main); font-size: 12px;">
+                <input type="text" placeholder="Ожидание, ех: 5" required class="test-expected" style="flex: 1; padding: 6px 10px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 4px; color: var(--text-main); font-size: 12px;">
+              </div>
+            </div>
+          </div>
+
+          <button type="submit" style="background: var(--success); color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; margin-top: 5px;">🚀 Создать и опубликовать задачу</button>
+        </form>
       </div>
+
     </div>
   `;
+
+  const testsListContainer = document.getElementById('constructor-tests-list');
+  document.getElementById('add-test-btn').addEventListener('click', () => {
+    const testGroup = document.createElement('div');
+    testGroup.classList.add('test-fields-group');
+    testGroup.style.display = 'flex';
+    testGroup.style.gap = '8px';
+    testGroup.innerHTML = `
+      <input type="text" placeholder="Вход аргументов, ех: [5, 5]" required class="test-input" style="flex: 1; padding: 6px 10px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 4px; color: var(--text-main); font-size: 12px;">
+      <input type="text" placeholder="Ожидание, ех: 10" required class="test-expected" style="flex: 1; padding: 6px 10px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 4px; color: var(--text-main); font-size: 12px;">
+    `;
+    testsListContainer.appendChild(testGroup);
+    testsListContainer.scrollTop = testsListContainer.scrollHeight;
+  });
+
+  document.getElementById('create-task-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+
+    const title = document.getElementById('new-task-title').value;
+    const description = document.getElementById('new-task-desc').value;
+    const difficulty = document.getElementById('new-task-diff').value;
+    const id = document.getElementById('new-task-id').value;
+    const starterCode = document.getElementById('new-task-starter').value;
+
+    const testGroups = document.querySelectorAll('.test-fields-group');
+    const tests = [];
+
+    try {
+      testGroups.forEach(group => {
+        const inputVal = group.querySelector('.test-input').value;
+        const expectedVal = group.querySelector('.test-expected').value;
+
+        tests.push({
+          input: JSON.parse(inputVal),
+          expected: JSON.parse(expectedVal)
+        });
+      });
+
+      const newTask = { id, title, difficulty, description, starterCode, tests };
+
+      saveCustomTask(newTask);
+      renderTaskList();
+      renderProfile();
+
+      alert(`Задача "${title}" успешно создана и добавлена в меню!`);
+    } catch (err) {
+      alert('Ошибка при разборе тестов! Убедитесь, что вы вводите валидный JSON. Пример входа: [2, 3] (обязательно в квадратных скобках), пример ожидания: 5 или "строка"');
+    }
+  });
 }
 
 function switchTab(tabName) {
