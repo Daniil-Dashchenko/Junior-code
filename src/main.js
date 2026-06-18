@@ -20,6 +20,7 @@ const PROGRESS_KEY = 'junior_code_progress';
 const CUSTOM_TASKS_KEY = 'junior_code_custom_tasks';
 const ACHIEVEMENTS_KEY = 'junior_code_achievements';
 const SUBMISSIONS_KEY = 'junior_code_submissions';
+const GEMINI_KEY = 'junior_code_gemini_api_key';
 
 const ACHIEVEMENTS = [
   { id: 'first-blood', title: '🥇 Первая кровь', description: 'Реши свою самую первую задачу на платформе.' },
@@ -231,9 +232,7 @@ function selectTask(taskId) {
   if (activeBtn) activeBtn.classList.add('active');
 
   if (activeTask && currentTab === 'editor') {
-
     activeTaskTab = 'desc';
-
     renderTaskWorkspaceStructure();
     initCodeJarEditor();
     startTimer();
@@ -243,16 +242,12 @@ function selectTask(taskId) {
 function renderTaskWorkspaceStructure() {
   workspaceContainer.innerHTML = `
     <div class="task-workspace" style="width: 100%; height: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
-      
       <div style="display: flex; flex-direction: column; gap: 15px; border-right: 1px solid var(--border-color); padding-right: 20px;">
-        
         <div style="display: flex; gap: 10px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px;">
           <button class="task-tab-btn ${activeTaskTab === 'desc' ? 'active' : ''}" id="task-tab-desc" style="background: none; border: none; color: ${activeTaskTab === 'desc' ? 'var(--accent)' : 'var(--text-muted)'}; font-weight: bold; cursor: pointer; padding: 5px 10px;">📝 Условие</button>
           <button class="task-tab-btn ${activeTaskTab === 'history' ? 'active' : ''}" id="task-tab-history" style="background: none; border: none; color: ${activeTaskTab === 'history' ? 'var(--accent)' : 'var(--text-muted)'}; font-weight: bold; cursor: pointer; padding: 5px 10px;">📜 История решений</button>
         </div>
-
-        <div id="task-left-content" style="flex: 1; overflow-y: auto;">
-          </div>
+        <div id="task-left-content" style="flex: 1; overflow-y: auto;"></div>
       </div>
 
       <div style="display: flex; flex-direction: column; gap: 15px;">
@@ -264,31 +259,40 @@ function renderTaskWorkspaceStructure() {
         </div>
         
         <div class="editor-container language-js" style="flex: 1; min-height: 250px;"></div>
-        <button class="btn-submit">Проверить решение</button>
         
+        <div style="display: flex; gap: 10px;">
+          <button class="btn-submit" style="flex: 2;">Проверить решение</button>
+          <button id="btn-ai-mentor" style="flex: 1; background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; transition: opacity 0.2s;">🤖 AI-Ментор</button>
+        </div>
+        
+        <div id="ai-response-box" style="display: none; background: #1e1b4b; border: 1px solid #4338ca; padding: 15px; border-radius: 8px; color: #e0e7ff; font-size: 13px; line-height: 1.5; max-height: 150px; overflow-y: auto;">
+          <strong>💡 Совет AI-ментора:</strong>
+          <p id="ai-text" style="margin-top: 5px; white-space: pre-line;"></p>
+        </div>
+
         <div class="test-results" style="margin-top: 10px; display: none; background: var(--bg-sidebar); border: 1px solid var(--border-color); padding: 15px; border-radius: 8px;">
           <h3>Результаты тестов:</h3>
           <ul class="results-list" style="list-style: none; margin-top: 10px; display: flex; flex-direction: column; gap: 8px;"></ul>
         </div>
       </div>
-
     </div>
   `;
 
   document.getElementById('task-tab-desc').addEventListener('click', () => switchTaskTab('desc'));
   document.getElementById('task-tab-history').addEventListener('click', () => switchTaskTab('history'));
+  
+  document.getElementById('btn-ai-mentor').addEventListener('click', () => {
+    if (jar && activeTask) askGeminiMentor(activeTask, jar.toString());
+  });
 
   updateTaskLeftContent();
 }
 
 function switchTaskTab(tab) {
   activeTaskTab = tab;
-  document.querySelectorAll('.task-tab-btn').forEach(btn => {
-    btn.style.color = 'var(--text-muted)';
-  });
+  document.querySelectorAll('.task-tab-btn').forEach(btn => { btn.style.color = 'var(--text-muted)'; });
   const activeBtn = document.getElementById(`task-tab-${tab}`);
   if (activeBtn) activeBtn.style.color = 'var(--accent)';
-
   updateTaskLeftContent();
 }
 
@@ -300,7 +304,6 @@ function updateTaskLeftContent() {
     container.innerHTML = `<p class="task-description" style="line-height: 1.6; white-space: pre-line; color: var(--text-main);">${activeTask.description}</p>`;
   } else if (activeTaskTab === 'history') {
     const subs = getSubmissions(activeTask.id);
-
     if (subs.length === 0) {
       container.innerHTML = `<div style="color: var(--text-muted); font-size: 13px; text-align: center; padding-top: 30px;">Вы еще не отправляли решения для этой задачи</div>`;
       return;
@@ -309,14 +312,12 @@ function updateTaskLeftContent() {
     let historyHTML = '<div style="display: flex; flex-direction: column; gap: 10px;">';
     subs.forEach((sub, index) => {
       historyHTML += `
-        <div class="submission-item" data-index="${index}" style="background: var(--bg-sidebar); border: 1px solid var(--border-color); padding: 12px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; transition: transform 0.2s;">
+        <div class="submission-item" data-index="${index}" style="background: var(--bg-sidebar); border: 1px solid var(--border-color); padding: 12px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; cursor: pointer;">
           <div style="display: flex; flex-direction: column; gap: 4px;">
-            <span style="font-size: 13px; font-weight: bold; color: ${sub.isPassed ? 'var(--success)' : '#ef4444'}">
-              ${sub.isPassed ? '● Пройдено успешно' : '❌ Ошибка в тестах'}
-            </span>
+            <span style="font-size: 13px; font-weight: bold; color: ${sub.isPassed ? 'var(--success)' : '#ef4444'}">${sub.isPassed ? '● Пройдено успешно' : '❌ Ошибка в тестах'}</span>
             <span style="font-size: 11px; color: var(--text-muted);">${sub.timestamp}</span>
           </div>
-          <button style="background: var(--bg-main); border: 1px solid var(--border-color); color: var(--text-main); padding: 4px 10px; font-size: 11px; border-radius: 4px; cursor: pointer;">Вставить код</button>
+          <button style="background: var(--bg-main); border: 1px solid var(--border-color); color: var(--text-main); padding: 4px 10px; font-size: 11px; border-radius: 4px;">Вставить код</button>
         </div>
       `;
     });
@@ -326,11 +327,7 @@ function updateTaskLeftContent() {
     container.querySelectorAll('.submission-item').forEach(item => {
       item.addEventListener('click', () => {
         const idx = item.dataset.index;
-        const selectedCode = subs[idx].code;
-        if (jar) {
-          jar.updateCode(selectedCode);
-          switchTaskTab('desc');
-        }
+        if (jar) { jar.updateCode(subs[idx].code); switchTaskTab('desc'); }
       });
     });
   }
@@ -341,13 +338,75 @@ function initCodeJarEditor() {
   if (editorElement) {
     if (jar) { try { jar.destroy(); } catch(e) {} }
     jar = CodeJar(editorElement, editor => Prism.highlightElement(editor));
-    
     const savedData = getTaskProgress(activeTask.id);
     jar.updateCode(savedData ? savedData.code : activeTask.starterCode);
 
     workspaceContainer.querySelector('.btn-submit').addEventListener('click', () => {
       if (jar && activeTask) runTests(activeTask, jar.toString());
     });
+  }
+}
+
+async function askGeminiMentor(task, userCode) {
+  const apiKey = localStorage.getItem(GEMINI_KEY);
+  const aiBox = document.getElementById('ai-response-box');
+  const aiText = document.getElementById('ai-text');
+  const aiBtn = document.getElementById('btn-ai-mentor');
+
+  if (!apiKey || apiKey.trim() === '') {
+    alert('Пожалуйста, сначала укажите ваш API-ключ Gemini в Личном кабинете!');
+    return;
+  }
+
+  aiBox.style.display = 'block';
+  aiText.textContent = '🤖 Думаю над решением... Секунду...';
+  aiBtn.disabled = true;
+  aiBtn.style.opacity = '0.5';
+
+  const promptText = `
+    Ты — опытный ИИ-ментор по программированию на JavaScript. Твоя цель — помочь начинающему разработчику найти ошибку в его коде.
+    
+    ТРЕБОВАНИЕ: Никогда не давай готовый исправленный код решения! Ограничивайся текстовыми подсказками, указывай на логику, синтаксис или крайние случаи. Говори кратко и по делу.
+    
+    Задача: "${task.title}"
+    Описание задачи: "${task.description}"
+    Тест-кейсы для проверки: ${JSON.stringify(task.tests)}
+    
+    Текущий код пользователя:
+    \`\`\`javascript
+    ${userCode}
+    \`\`\`
+    
+    Найди ошибку или дай полезный совет по улучшению этого кода, следуя правилу "не спойлерить готовое решение".
+  `;
+
+  try {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: promptText }] }]
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Ошибка сервера: ${response.status}. Проверьте лимиты ключа или попробуйте VPN (если вы в заблокированном регионе для Google AI).`);
+    }
+
+    const data = await response.json();
+    
+    if (data.error) {
+      throw new Error(data.error.message);
+    }
+
+    const reply = data.candidates[0].content.parts[0].text;
+    aiText.textContent = reply;
+
+  } catch (error) {
+    aiText.textContent = `❌ Не удалось получить ответ.\nОшибка: ${error.message}\n\nВозможные причины:\n1. Ключ вставлен не полностью.\n2. Требуется VPN (Google AI Studio официально не работает без него на территории РФ).`;
+  } finally {
+    aiBtn.disabled = false;
+    aiBtn.style.opacity = '1';
   }
 }
 
@@ -390,7 +449,6 @@ function runTests(task, userCode) {
     }
 
     saveSubmission(task.id, userCode, allTestsPassed);
-
     saveProgress(task.id, userCode, allTestsPassed, secondsElapsed);
     renderTaskList();
 
@@ -427,6 +485,8 @@ function renderProfile() {
   const avgTime = timesArray.length > 0 ? Math.round(totalTime / timesArray.length) : 0;
 
   const unlockedList = getUnlockedAchievements();
+  
+  const savedGeminiKey = localStorage.getItem(GEMINI_KEY) || '';
 
   let achievementsHTML = '';
   ACHIEVEMENTS.forEach(ach => {
@@ -446,8 +506,17 @@ function renderProfile() {
     <div class="profile-layout" style="width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 30px; align-items: start;">
       <div class="profile-container" style="display: flex; flex-direction: column; gap: 25px;">
         <div>
-          <h2 style="margin-bottom: 5px;">Кабинет стажёра</h2>
+          <h2>Кабинет стажёра</h2>
           <p style="color: var(--text-muted);">Твой личный трекер готовности к работе</p>
+        </div>
+
+        <div style="background: var(--bg-card); border: 1px solid var(--border-color); padding: 20px; border-radius: 12px; display: flex; flex-direction: column; gap: 10px;">
+          <h3 style="font-size: 14px; color: var(--accent);">🔑 Настройка ИИ-Ментора (Gemini API)</h3>
+          <p style="font-size: 11px; color: var(--text-muted); line-height: 1.4;">Ключ сохраняется локально в вашем браузере. Получить бесплатный ключ можно в Google AI Studio.</p>
+          <div style="display: flex; gap: 8px;">
+            <input type="password" id="gemini-key-input" value="${savedGeminiKey}" placeholder="AIzaSy..." style="flex: 1; padding: 8px 12px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); font-family: monospace; font-size: 13px;">
+            <button id="btn-save-gemini-key" style="background: var(--success); color: white; border: none; padding: 8px 16px; border-radius: 6px; font-weight: bold; cursor: pointer;">Сохранить</button>
+          </div>
         </div>
 
         <div style="background: var(--bg-card); border: 1px solid var(--border-color); padding: 25px; border-radius: 12px; display: flex; flex-direction: column; gap: 20px;">
@@ -488,7 +557,7 @@ function renderProfile() {
       </div>
 
       <div class="constructor-container" style="background: var(--bg-card); border: 1px solid var(--border-color); padding: 25px; border-radius: 12px; display: flex; flex-direction: column; gap: 15px;">
-        <h3 style="margin-bottom: 5px;">🛠 Конструктор задач</h3>
+        <h3 style="margin-bottom: 5px;">🛠 FKонструктор задач</h3>
         <form id="create-task-form" style="display: flex; flex-direction: column; gap: 12px;">
           <input type="text" id="new-task-title" placeholder="Название задачи" required style="width: 100%; padding: 8px 12px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main);">
           <textarea id="new-task-desc" placeholder="Описание задачи..." required rows="3" style="width: 100%; padding: 8px 12px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); font-family: inherit; resize: vertical;"></textarea>
@@ -501,26 +570,28 @@ function renderProfile() {
             <input type="text" id="new-task-id" placeholder="Уникальный ID (латиница)" required style="flex: 1; padding: 8px 12px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main);">
           </div>
 
-          <textarea id="new-task-starter" placeholder="Starter code..." required rows="4" style="width: 100%; padding: 8px 12px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); font-family: monospace; font-size: 13px;"></textarea>
+          <textarea id="new-task-starter" placeholder="Starter code..." required rows="4" style="width: 100%; padding: 8px 12px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); font-family: monospace; font-size: 13px;">function name() {\n\n}</textarea>
           
           <div style="border-top: 1px solid var(--border-color); padding-top: 10px;">
-            <h4 style="margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
-              Тест-кейсы:
-              <button type="button" id="add-test-btn" style="background: var(--accent); border: none; color: white; padding: 4px 8px; font-size: 11px; border-radius: 4px; cursor: pointer;">+ Добавить тест</button>
-            </h4>
-            <div id="constructor-tests-list" style="display: flex; flex-direction: column; gap: 8px; max-height: 150px; overflow-y: auto; padding-right: 5px;">
+            <h4 style="margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">Тест-кейсы: <button type="button" id="add-test-btn" style="background: var(--accent); border: none; color: white; padding: 4px 8px; font-size: 11px; border-radius: 4px;">+ Добавить</button></h4>
+            <div id="constructor-tests-list" style="display: flex; flex-direction: column; gap: 8px; max-height: 150px; overflow-y: auto;">
               <div class="test-fields-group" style="display: flex; gap: 8px;">
                 <input type="text" placeholder="Вход ех: [2, 3]" required class="test-input" style="flex: 1; padding: 6px 10px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 4px; color: var(--text-main); font-size: 12px;">
                 <input type="text" placeholder="Ожидание ех: 5" required class="test-expected" style="flex: 1; padding: 6px 10px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 4px; color: var(--text-main); font-size: 12px;">
               </div>
             </div>
           </div>
-
-          <button type="submit" style="background: var(--success); color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; margin-top: 5px;">🚀 Создать задачу</button>
+          <button type="submit" style="background: var(--success); color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer;">🚀 Создать задачу</button>
         </form>
       </div>
     </div>
   `;
+
+  document.getElementById('btn-save-gemini-key').addEventListener('click', () => {
+    const keyVal = document.getElementById('gemini-key-input').value;
+    localStorage.setItem(GEMINI_KEY, keyVal);
+    alert('API-ключ Gemini успешно сохранен!');
+  });
 
   const testsListContainer = document.getElementById('constructor-tests-list');
   document.getElementById('add-test-btn').addEventListener('click', () => {
