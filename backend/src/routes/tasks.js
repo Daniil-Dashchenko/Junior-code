@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Submission = require('../models/Submission');
 const authMiddleware = require('./authMiddleware');
+const adminMiddleware = require('./adminMiddleware');
 
 router.post('/submit', authMiddleware, async (req, res) => {
   try {
@@ -49,8 +50,45 @@ router.get('/progress', authMiddleware, async (req, res) => {
       progress: progressMap,
       submissions: submissions
     });
-  } catch (error) {
+  } 
+  catch (error) {
     res.status(500).json({ message: 'Ошибка сервера при получении прогресса', error: error.message });
+  }
+});
+
+router.get('/', authMiddleware, async (req, res) => {
+  try {
+    const tasks = await Task.find().sort({ createdAt: 1 });
+    res.json(tasks);
+  } 
+  catch (error) {
+    res.status(500).json({ message: 'Ошибка при получении списка задач', error: error.message });
+  }
+});
+
+
+router.post('/new', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { taskId, title, description, difficulty, starterCode, testCases } = req.body;
+
+    const existingTask = await Task.findOne({ taskId });
+    if (existingTask) {
+      return res.status(400).json({ message: 'Задача с таким ID уже существует' });
+    }
+
+    const newTask = new Task({
+      taskId,
+      title,
+      description,
+      difficulty,
+      starterCode,
+      testCases
+    });
+
+    await newTask.save();
+    res.status(201).json({ message: 'Задача успешно создана и сохранена в БД!', task: newTask });
+  } catch (error) {
+    res.status(500).json({ message: 'Ошибка при создании задачи', error: error.message });
   }
 });
 
