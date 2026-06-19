@@ -5,6 +5,9 @@ import Prism from 'prismjs';
 let jar = null;
 let activeTask = null;
 
+let userProgress = {};
+let userSubmissions =  [];
+
 let currentDifficultyFilter = 'all';
 let searchQuery = '';
 let currentTab = 'editor';
@@ -35,46 +38,58 @@ function getAllTasks() {
   return [...defaultTasks, ...customTasks];
 }
 
-function saveProgress(taskId, code, isPassed, timeSpent = null) {
-  const progress = JSON.parse(localStorage.getItem(PROGRESS_KEY)) || {};
-  const oldStatus = progress[taskId]?.isPassed || false;
-  const oldTime = progress[taskId]?.timeSpent || null;
+function getAuthHeader() {
+  const token = localStorage.getItem('junior_code_token');
+  return token ? { 'Authorization': `Bearer ${token}` } : {};
+}
 
-  let finalTime = oldTime;
-  if (isPassed) {
-    if (oldTime === null || (timeSpent !== null && timeSpent < oldTime)) {
-      finalTime = timeSpent;
-    }
-  } else if (oldTime === null && timeSpent !== null) {
-    finalTime = timeSpent;
+async function loadProgressFromServer() {
+  try {
+    const response = await fetch(`${BACKEND_URL}/tasks/progress`, {
+      method: 'GET',
+      headers: {
+        ...getAuthHeader()
+      }
+    });
+
+    if (!response.ok) throw new Error('Не удалось загрузить прогресс');
+
+    const data = await response.json();
+    userProgress = data.progress || {};
+    userSubmissions = data.submissions || [];
+    
+    renderTaskList();
+  } catch (err) {
+    console.error('Ошибка загрузки прогресса:', err);
   }
+}
 
-  progress[taskId] = { code, isPassed: isPassed || oldStatus, timeSpent: finalTime };
-  localStorage.setItem(PROGRESS_KEY, JSON.stringify(progress));
+async function saveSubmissionToServer(taskId, code, isPassed, timeSpent) {
+  try {
+    const response = await fetch(`${BACKEND_URL}/tasks/submit`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeader()
+      },
+      body: JSON.stringify({ taskId, code, isPassed, timeSpent })
+    });
+
+    if (!response.ok) throw new Error('Ошибка сохранения на сервере');
+
+    await loadProgressFromServer();
+  } 
+  catch (err) {
+    console.error('Ошибка отправки на сервер:', err);
+  }
 }
 
 function getTaskProgress(taskId) {
-  const progress = JSON.parse(localStorage.getItem(PROGRESS_KEY)) || {};
-  return progress[taskId] || null;
+  return userProgress[taskId] || null;
 }
 
 function getSubmissions(taskId) {
-  const allSubmissions = JSON.parse(localStorage.getItem(SUBMISSIONS_KEY)) || {};
-  return allSubmissions[taskId] || [];
-}
-
-function saveSubmission(taskId, code, isPassed) {
-  const allSubmissions = JSON.parse(localStorage.getItem(SUBMISSIONS_KEY)) || {};
-  if (!allSubmissions[taskId]) allSubmissions[taskId] = [];
-
-  const newSubmission = {
-    timestamp: new Date().toLocaleString('ru-RU'),
-    code: code,
-    isPassed: isPassed
-  };
-
-  allSubmissions[taskId].unshift(newSubmission);
-  localStorage.setItem(SUBMISSIONS_KEY, JSON.stringify(allSubmissions));
+  return userSubmissions.filter(sub => sub.taskId === taskId);
 }
 
 function getUnlockedAchievements() {
@@ -410,7 +425,7 @@ async function askGeminiMentor(task, userCode) {
   }
 }
 
-function runTests(task, userCode) {
+async function runTests(task, userCode) {
   const resultsContainer = workspaceContainer.querySelector('.test-results');
   const resultsList = workspaceContainer.querySelector('.results-list');
   if (!resultsContainer || !resultsList) return;
@@ -448,9 +463,7 @@ function runTests(task, userCode) {
       checkAchievementsAfterTaskSolved(task.id, secondsElapsed);
     }
 
-    saveSubmission(task.id, userCode, allTestsPassed);
-    saveProgress(task.id, userCode, allTestsPassed, secondsElapsed);
-    renderTaskList();
+    await saveSubmissionToServer(task.id, userCode, allTestsPassed, secondsElapsed);
 
     if (activeTaskTab === 'history') updateTaskLeftContent();
 
@@ -460,8 +473,7 @@ function runTests(task, userCode) {
     li.innerHTML = `<strong>Ошибка:</strong> ${error.message}`;
     resultsList.appendChild(li);
 
-    saveSubmission(task.id, userCode, false);
-    saveProgress(task.id, userCode, false, secondsElapsed);
+    await saveSubmissionToServer(task.id, userCode, allTestsPassed, secondsElapsed);
     
     if (activeTaskTab === 'history') updateTaskLeftContent();
   }
@@ -764,8 +776,9 @@ function checkAuth() {
     if (profileHeader) {
       profileHeader.textContent = `Кабинет стажёра: ${user.username}`;
     }
-  } 
-  else {
+
+    loadProgressFromServer();
+  } else {
     authScreen.style.display = 'flex';
   }
 }
