@@ -7,38 +7,40 @@
   <link rel="stylesheet" href="./src/style.css">
 </head>
 <body>
+
   <div id="auth-screen" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-main); z-index: 10000; display: flex; align-items: center; justify-content: center;">
-  <div style="background: var(--bg-card); border: 1px solid var(--border-color); padding: 35px; border-radius: 12px; width: 100%; max-width: 400px; display: flex; flex-direction: column; gap: 20px; box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
-    <div>
-      <h2 id="auth-title" style="font-size: 24px; margin-bottom: 5px;">Вход в Junior Code</h2>
-      <p id="auth-subtitle" style="color: var(--text-muted); font-size: 14px;">Введите свои данные для доступа к платформе</p>
-    </div>
-    
-    <form id="auth-form" style="display: flex; flex-direction: column; gap: 15px;">
-      <div style="display: flex; flex-direction: column; gap: 5px;">
-        <label style="font-size: 12px; color: var(--text-muted); text-transform: uppercase;">Логин</label>
-        <input type="text" id="auth-username" required style="padding: 10px 12px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main);">
+    <div style="background: var(--bg-card); border: 1px solid var(--border-color); padding: 35px; border-radius: 12px; width: 100%; max-width: 400px; display: flex; flex-direction: column; gap: 20px; box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
+      <div>
+        <h2 id="auth-title" style="font-size: 24px; margin-bottom: 5px;">Вход в Junior Code</h2>
+        <p id="auth-subtitle" style="color: var(--text-muted); font-size: 14px;">Введите свои данные для доступа к платформе</p>
       </div>
       
-      <div style="display: flex; flex-direction: column; gap: 5px;">
-        <label style="font-size: 12px; color: var(--text-muted); text-transform: uppercase;">Пароль</label>
-        <input type="password" id="auth-password" required style="padding: 10px 12px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main);">
+      <form id="auth-form" style="display: flex; flex-direction: column; gap: 15px;">
+        <div style="display: flex; flex-direction: column; gap: 5px;">
+          <label style="font-size: 12px; color: var(--text-muted); text-transform: uppercase;">Логин</label>
+          <input type="text" id="auth-username" required style="padding: 10px 12px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main);">
+        </div>
+        
+        <div style="display: flex; flex-direction: column; gap: 5px;">
+          <label style="font-size: 12px; color: var(--text-muted); text-transform: uppercase;">Пароль</label>
+          <input type="password" id="auth-password" required style="padding: 10px 12px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main);">
+        </div>
+
+        <div id="auth-error" style="display: none; color: #ef4444; font-size: 13px;"></div>
+
+        <button type="submit" id="auth-submit-btn" style="background: var(--accent); color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; margin-top: 10px;">Войти</button>
+      </form>
+
+      <div style="text-align: center; font-size: 13px; color: var(--text-muted); margin-top: 5px;">
+        <span id="auth-toggle-text">Еще нет аккаунта?</span> 
+        <button id="auth-toggle-btn" style="background: none; border: none; color: var(--accent); cursor: pointer; font-weight: bold; padding: 0; margin-left: 5px;">Зарегистрироваться</button>
       </div>
-
-      <div id="auth-error" style="display: none; color: #ef4444; font-size: 13px;"></div>
-
-      <button type="submit" id="auth-submit-btn" style="background: var(--accent); color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; margin-top: 10px;">Войти</button>
-    </form>
-
-    <div style="text-align: center; font-size: 13px; color: var(--text-muted); margin-top: 5px;">
-      <span id="auth-toggle-text">Еще нет аккаунта?</span> 
-      <button id="auth-toggle-btn" style="background: none; border: none; color: var(--accent); cursor: pointer; font-weight: bold; padding: 0; margin-left: 5px;">Зарегистрироваться</button>
     </div>
   </div>
-</div>
+
   <div class="app-container">
     
-    <aside class="sidebar">
+    <aside class="sidebar" id="app-sidebar">
       <div class="sidebar-header">
         <h2>🚀 JuniorCode</h2>
         <span class="badge">JS Edition</span>
@@ -54,22 +56,84 @@
         </div>
       </div>
       
-      <nav class="task-list">
-        </nav>
+      <nav class="task-list"></nav>
     </aside>
 
     <div class="main-wrapper" style="flex: 1; display: flex; flex-direction: column;">
       
       <header class="main-header" style="height: 60px; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; padding: 0 40px; gap: 20px; background: var(--bg-sidebar);">
-        <button class="tab-btn active" data-tab="editor">📝 Редактор кода</button>
-        <button class="tab-btn" data-tab="profile">👤 Личный кабинет</button>
+        <button class="tab-btn active" id="nav-editor-btn" data-tab="editor">📝 Редактор кода</button>
+        <button class="tab-btn" id="nav-profile-btn" data-tab="profile">👤 Личный кабинет</button>
+        <button class="tab-btn" id="nav-admin-btn" data-tab="admin" style="display: none; background: #e11d48; color: white; border: none; padding: 8px 12px; border-radius: 6px; font-weight: bold; cursor: pointer;">👑 Панель админа</button>
       </header>
 
-      <main class="workspace">
-        <div class="placeholder-content">
-          <h3>Выберите задачу в меню слева, чтобы начать кодить</h3>
-          <p>Или перейдите в Личный кабинет для просмотра статистики стажировки.</p>
+      <main class="workspace" style="flex: 1; overflow-y: auto; padding: 20px;">
+        
+        <div id="editor-tab-content">
+          <div class="placeholder-content">
+            <h3>Выберите задачу в меню слева, чтобы начать кодить</h3>
+            <p>Или перейдите в Личный кабинет для просмотра статистики стажировки.</p>
+          </div>
+          </div>
+
+        <div id="profile-tab-content" style="display: none;">
+          </div>
+
+        <div id="admin-tab-content" style="display: none; flex-direction: column; gap: 20px; max-width: 800px; margin: 0 auto;">
+          <h2>Панель администратора</h2>
+          <p style="color: var(--text-muted); margin-top: -10px;">Здесь вы можете добавлять новые задачи напрямую в базу данных MongoDB</p>
+
+          <form id="add-task-form" style="background: var(--bg-card); border: 1px solid var(--border-color); padding: 25px; border-radius: 12px; display: flex; flex-direction: column; gap: 15px;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+              <div style="display: flex; flex-direction: column; gap: 5px;">
+                <label style="font-size: 12px; color: var(--text-muted);">ID Задачи (на англ., через дефис)</label>
+                <input type="text" id="task-id-input" placeholder="например, find-max-number" required style="padding: 10px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main);">
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 5px;">
+                <label style="font-size: 12px; color: var(--text-muted);">Название задачи</label>
+                <input type="text" id="task-title-input" placeholder="Поиск maximalного числа" required style="padding: 10px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main);">
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+              <div style="display: flex; flex-direction: column; gap: 5px;">
+                <label style="font-size: 12px; color: var(--text-muted);">Сложность</label>
+                <select id="task-difficulty-input" style="padding: 10px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main);">
+                  <option value="easy">Easy</option>
+                  <option value="medium">Medium</option>
+                  <option value="hard">Hard</option>
+                </select>
+              </div>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 5px;">
+              <label style="font-size: 12px; color: var(--text-muted);">Описание задачи (условие, примеры)</label>
+              <textarea id="task-desc-input" rows="4" placeholder="Напишите функцию, которая принимает..." required style="padding: 10px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); font-family: inherit; resize: vertical;"></textarea>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 5px;">
+              <label style="font-size: 12px; color: var(--text-muted);">Начальный шаблон кода для студента</label>
+              <textarea id="task-code-input" rows="5" required style="padding: 10px; background: #1e1e1e; border: 1px solid var(--border-color); border-radius: 6px; color: #f4f4f5; font-family: monospace; resize: vertical;">function myFunction() {\n  // Пиши код здесь\n}</textarea>
+            </div>
+
+            <div style="border-top: 1px solid var(--border-color); padding-top: 15px;">
+              <h3 style="font-size: 16px; margin-bottom: 10px;">Тест-кейсы (Минимум два)</h3>
+              <div id="test-cases-container" style="display: flex; flex-direction: column; gap: 10px;">
+                <div class="test-case-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                  <input type="text" class="test-input" placeholder="Вход (например: [1, 5, 3])" required style="padding: 8px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main);">
+                  <input type="text" class="test-output" placeholder="Выход (например: 5)" required style="padding: 8px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main);">
+                </div>
+                <div class="test-case-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                  <input type="text" class="test-input" placeholder="Вход (например: [-10, 0, -2])" required style="padding: 8px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main);">
+                  <input type="text" class="test-output" placeholder="Выход (например: 0)" required style="padding: 8px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main);">
+                </div>
+              </div>
+            </div>
+
+            <button type="submit" style="background: #10b981; color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; margin-top: 10px;">🚀 Опубликовать задачу</button>
+          </form>
         </div>
+
       </main>
     </div>
 

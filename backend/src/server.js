@@ -25,6 +25,29 @@ app.get('/api/status', (req,res) => {
     res.json({ status: 'working', message: 'Бекенд Junior Code успешно запущен!' });
 });
 
+// ВРЕМЕННЫЙ КОД ДЛЯ ВЫДАЧИ АДМИНКИ
+const User = require('./models/User');
+mongoose.connection.once('open', async () => {
+  try {
+    // ВПИШИ СЮДА СВОЙ ЛОГИН, под которым ты регистрировался на сайте
+    const myLogin = 'user1'; 
+    
+    const updatedUser = await User.findOneAndUpdate(
+      { username: myLogin },
+      { role: 'admin' },
+      { new: true }
+    );
+    
+    if (updatedUser) {
+      console.log(`👑 УСПЕХ: Пользователь ${myLogin} теперь имеет роль: ${updatedUser.role}`);
+    } else {
+      console.log(`❌ ОШИБКА: Пользователь с логином "${myLogin}" не найден в базе данных!`);
+    }
+  } catch (err) {
+    console.error('Ошибка при обновлении роли:', err);
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`📡 Сервер запущен и слушает порт ${PORT}`);
 });

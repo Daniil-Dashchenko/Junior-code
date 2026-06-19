@@ -20,22 +20,108 @@ const taskListContainer = document.querySelector('.task-list');
 const workspaceContainer = document.querySelector('.workspace');
 
 const PROGRESS_KEY = 'junior_code_progress';
-const CUSTOM_TASKS_KEY = 'junior_code_custom_tasks';
-const ACHIEVEMENTS_KEY = 'junior_code_achievements';
 const SUBMISSIONS_KEY = 'junior_code_submissions';
 const GEMINI_KEY = 'junior_code_gemini_api_key';
+const BACKEND_URL = 'http://localhost:5000/api';
+let isSignUpMode = false;
 
 const ACHIEVEMENTS = [
   { id: 'first-blood', title: '🥇 Первая кровь', description: 'Реши свою самую первую задачу на платформе.' },
   { id: 'speed-demon', title: '⚡ Демон скорости', description: 'Реши любую задачу быстрее чем за 30 секунд.' },
-  { id: 'night-owl', title: '🦉 Полуночный кодер', description: 'Отправь успешное решение в ночное время (с 22:00 до 06:00).' },
-  { id: 'creator', title: '🛠 На все руки мастер', description: 'Создай свою собственную задачу в конструкторе.' },
-  { id: 'perfectionist', title: '🏆 Перфекционист', description: 'Успешно реши задачу, которую ты создал сам.' }
+  { id: 'night-owl', title: '🦉 Полуночный кодер', description: 'Отправь успешное решение в ночное время (с 22:00 до 06:00).' }
 ];
 
+function getCurrentUserKey() {
+  const userData = localStorage.getItem('junior_code_user');
+  if (userData) {
+    const user = JSON.parse(userData);
+    return `junior_code_achievements_${user.username}`;
+  }
+  return 'junior_code_achievements_guest';
+}
+
+function getUserStatsKey() {
+  const userData = localStorage.getItem('junior_code_user');
+  if (userData) {
+    const user = JSON.parse(userData);
+    return `junior_code_stats_${user.username}`;
+  }
+  return 'junior_code_stats_guest';
+}
+
+function getUserStats() {
+  const key = getUserStatsKey();
+  const defaultStats = { xp: 0, level: 1, streak: 0, lastSolvedDate: null };
+  try {
+    const saved = localStorage.getItem(key);
+    return saved ? JSON.parse(saved) : defaultStats;
+  } catch (e) {
+    return defaultStats;
+  }
+}
+
+function saveUserStats(stats) {
+  const key = getUserStatsKey();
+  localStorage.setItem(key, JSON.stringify(stats));
+}
+
+function updateStreak() {
+  const stats = getUserStats();
+  if (!stats.lastSolvedDate) return;
+
+  const today = new Date().setHours(0,0,0,0);
+  const lastSolved = new Date(stats.lastSolvedDate).setHours(0,0,0,0);
+  const diffTime = today - lastSolved;
+  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+  if (diffDays > 1) {
+    stats.streak = 0;
+    saveUserStats(stats);
+  }
+}
+
+function addXpAndCheckLevel(difficulty) {
+  const stats = getUserStats();
+  let xpToAdd = 100;
+  if (difficulty === 'medium') xpToAdd = 250;
+  if (difficulty === 'hard') xpToAdd = 500;
+
+  stats.xp += xpToAdd;
+
+  const xpNeeded = stats.level * 1000;
+  let leveledUp = false;
+
+  if (stats.xp >= xpNeeded) {
+    stats.xp -= xpNeeded;
+    stats.level += 1;
+    leveledUp = true;
+  }
+
+  const todayStr = new Date().toDateString();
+  if (stats.lastSolvedDate !== todayStr) {
+    if (stats.lastSolvedDate) {
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      if (new Date(stats.lastSolvedDate).toDateString() === yesterday.toDateString()) {
+        stats.streak += 1;
+      } else {
+        stats.streak = 1;
+      }
+    } else {
+      stats.streak = 1;
+    }
+    stats.lastSolvedDate = todayStr;
+  }
+
+  saveUserStats(stats);
+
+  if (leveledUp) {
+    alert(`🎉 Поздравляем! Вы достигли ${stats.level} уровня!`);
+  }
+}
+
 function getAllTasks() {
-  const customTasks = JSON.parse(localStorage.getItem(CUSTOM_TASKS_KEY)) || [];
-  return [...defaultTasks, ...customTasks];
+  return [...defaultTasks];
 }
 
 function getAuthHeader() {
@@ -58,6 +144,7 @@ async function loadProgressFromServer() {
     userProgress = data.progress || {};
     userSubmissions = data.submissions || [];
     
+    updateStreak();
     renderTaskList();
   } catch (err) {
     console.error('Ошибка загрузки прогресса:', err);
@@ -80,7 +167,7 @@ async function saveSubmissionToServer(taskId, code, isPassed, timeSpent) {
     await loadProgressFromServer();
   } 
   catch (err) {
-    console.error('Ошибка отправки на сервер:', err);
+    console.error('Ошибка отправки на server:', err);
   }
 }
 
@@ -93,14 +180,16 @@ function getSubmissions(taskId) {
 }
 
 function getUnlockedAchievements() {
-  return JSON.parse(localStorage.getItem(ACHIEVEMENTS_KEY)) || [];
+  const key = getCurrentUserKey();
+  return JSON.parse(localStorage.getItem(key)) || [];
 }
 
 function unlockAchievement(achievementId) {
+  const key = getCurrentUserKey();
   const unlocked = getUnlockedAchievements();
   if (!unlocked.includes(achievementId)) {
     unlocked.push(achievementId);
-    localStorage.setItem(ACHIEVEMENTS_KEY, JSON.stringify(unlocked));
+    localStorage.setItem(key, JSON.stringify(unlocked));
     const ach = ACHIEVEMENTS.find(a => a.id === achievementId);
     if (ach) showAchievementToast(ach);
   }
@@ -147,24 +236,13 @@ function showAchievementToast(achievement) {
 }
 
 function checkAchievementsAfterTaskSolved(taskId, timeSpent) {
-  const progress = JSON.parse(localStorage.getItem(PROGRESS_KEY)) || {};
-  const solvedTasks = Object.keys(progress).filter(id => progress[id].isPassed);
+  const solvedTasks = Object.keys(userProgress).filter(id => userProgress[id].isPassed);
 
   if (solvedTasks.length === 1) unlockAchievement('first-blood');
   if (timeSpent !== null && timeSpent < 30) unlockAchievement('speed-demon');
   
   const currentHour = new Date().getHours();
   if (currentHour >= 22 || currentHour < 6) unlockAchievement('night-owl');
-
-  const isCustom = !defaultTasks.some(t => t.id === taskId);
-  if (isCustom) unlockAchievement('perfectionist');
-}
-
-function saveCustomTask(newTask) {
-  const customTasks = JSON.parse(localStorage.getItem(CUSTOM_TASKS_KEY)) || [];
-  customTasks.push(newTask);
-  localStorage.setItem(CUSTOM_TASKS_KEY, JSON.stringify(customTasks));
-  unlockAchievement('creator');
 }
 
 function startTimer() {
@@ -194,6 +272,7 @@ function formatTime(totalSeconds) {
 }
 
 function renderTaskList() {
+  if (!taskListContainer) return;
   taskListContainer.innerHTML = '';
   const allTasks = getAllTasks();
 
@@ -216,14 +295,13 @@ function renderTaskList() {
 
     const savedData = getTaskProgress(task.id);
     const isSolved = savedData ? savedData.isPassed : false;
-    const isCustom = !defaultTasks.some(t => t.id === task.id);
 
     taskButton.innerHTML = `
       <span class="task-status ${isSolved ? 'status-success' : ''}" id="status-${task.id}">
         ${isSolved ? '✓' : ''}
       </span>
       <div class="task-info">
-        <span class="task-title">${task.title} ${isCustom ? '<small style="color:var(--warning); font-size:10px;">(Своя)</small>' : ''}</span>
+        <span class="task-title">${task.title}</span>
         <span class="task-difficulty ${task.difficulty}">
           ${task.difficulty === 'easy' ? 'Легко' : 'Средне'}
         </span>
@@ -255,6 +333,7 @@ function selectTask(taskId) {
 }
 
 function renderTaskWorkspaceStructure() {
+  if (!workspaceContainer) return;
   workspaceContainer.innerHTML = `
     <div class="task-workspace" style="width: 100%; height: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
       <div style="display: flex; flex-direction: column; gap: 15px; border-right: 1px solid var(--border-color); padding-right: 20px;">
@@ -380,19 +459,14 @@ async function askGeminiMentor(task, userCode) {
 
   const promptText = `
     Ты — опытный ИИ-ментор по программированию на JavaScript. Твоя цель — помочь начинающему разработчику найти ошибку в его коде.
-    
-    ТРЕБОВАНИЕ: Никогда не давай готовый исправленный код решения! Ограничивайся текстовыми подсказками, указывай на логику, синтаксис или крайние случаи. Говори кратко и по делу.
-    
+    Никогда не давай готовый исправленный код решения! Ограничивайся текстовыми подсказками, указывай на логику, синтаксис или крайние случаи. Говори кратко и по делу.
     Задача: "${task.title}"
     Описание задачи: "${task.description}"
-    Тест-кейсы для проверки: ${JSON.stringify(task.tests)}
-    
+    Тест-кейсы для проверки: ${JSON.stringify(task.tests || task.testCases)}
     Текущий код пользователя:
     \`\`\`javascript
     ${userCode}
     \`\`\`
-    
-    Найди ошибку или дай полезный совет по улучшению этого кода, следуя правилу "не спойлерить готовое решение".
   `;
 
   try {
@@ -404,21 +478,16 @@ async function askGeminiMentor(task, userCode) {
       })
     });
 
-    if (!response.ok) {
-      throw new Error(`Ошибка сервера: ${response.status}. Проверьте лимиты ключа или попробуйте VPN (если вы в заблокированном регионе для Google AI).`);
-    }
+    if (!response.ok) throw new Error(`Ошибка сервера: ${response.status}`);
 
     const data = await response.json();
-    
-    if (data.error) {
-      throw new Error(data.error.message);
-    }
+    if (data.error) throw new Error(data.error.message);
 
     const reply = data.candidates[0].content.parts[0].text;
     aiText.textContent = reply;
 
   } catch (error) {
-    aiText.textContent = `❌ Не удалось получить ответ.\nОшибка: ${error.message}\n\nВозможные причины:\n1. Ключ вставлен не полностью.\n2. Требуется VPN (Google AI Studio официально не работает без него на территории РФ).`;
+    aiText.textContent = `❌ Не удалось получить ответ.\nОшибка: ${error.message}`;
   } finally {
     aiBtn.disabled = false;
     aiBtn.style.opacity = '1';
@@ -446,25 +515,33 @@ async function runTests(task, userCode) {
       throw new Error(`Функция "${functionName}" не найдена.`);
     }
 
-    task.tests.forEach((test, index) => {
-      const inputArgs = JSON.parse(JSON.stringify(test.input)); 
+    const cases = task.tests || task.testCases || [];
+
+    cases.forEach((test, index) => {
+      const testInput = test.input;
+      const expectedOutput = test.expected !== undefined ? test.expected : test.output;
+
+      const inputArgs = Array.isArray(testInput) ? JSON.parse(JSON.stringify(testInput)) : [testInput]; 
       const actualResult = userFunction(...inputArgs);
-      const isPassed = compareResults(actualResult, test.expected);
+      const isPassed = compareResults(actualResult, expectedOutput);
       if (!isPassed) allTestsPassed = false;
 
       const li = document.createElement('li');
       li.style.color = isPassed ? 'var(--success)' : '#ef4444';
-      li.innerHTML = `<strong>Тест ${index + 1}:</strong> ${isPassed ? '● Пройден' : '❌ Ошибка'}<br><span style="color: var(--text-muted); font-size: 12px;">Вход: ${JSON.stringify(test.input)} | Ожидалось: ${JSON.stringify(test.expected)} | Получено: ${JSON.stringify(actualResult)}</span>`;
+      li.innerHTML = `<strong>Тест ${index + 1}:</strong> ${isPassed ? '● Пройден' : '❌ Ошибка'}<br><span style="color: var(--text-muted); font-size: 12px;">Вход: ${JSON.stringify(testInput)} | Ожидалось: ${JSON.stringify(expectedOutput)} | Получено: ${JSON.stringify(actualResult)}</span>`;
       resultsList.appendChild(li);
     });
 
     if (allTestsPassed) {
       stopTimer();
+      const currentProgress = getTaskProgress(task.id);
+      if (!currentProgress || !currentProgress.isPassed) {
+        addXpAndCheckLevel(task.difficulty);
+      }
       checkAchievementsAfterTaskSolved(task.id, secondsElapsed);
     }
 
     await saveSubmissionToServer(task.id, userCode, allTestsPassed, secondsElapsed);
-
     if (activeTaskTab === 'history') updateTaskLeftContent();
 
   } catch (error) {
@@ -473,19 +550,22 @@ async function runTests(task, userCode) {
     li.innerHTML = `<strong>Ошибка:</strong> ${error.message}`;
     resultsList.appendChild(li);
 
-    await saveSubmissionToServer(task.id, userCode, allTestsPassed, secondsElapsed);
-    
+    await saveSubmissionToServer(task.id, userCode, false, secondsElapsed);
     if (activeTaskTab === 'history') updateTaskLeftContent();
   }
 }
 
 function compareResults(actual, expected) {
-  if (Array.isArray(actual) && Array.isArray(expected)) return JSON.stringify(actual) === JSON.stringify(expected);
-  return actual === expected;
+  let parsedExpected = expected;
+  if (typeof expected === 'string') {
+    try { parsedExpected = JSON.parse(expected); } catch(e) {}
+  }
+  if (Array.isArray(actual) && Array.isArray(parsedExpected)) return JSON.stringify(actual) === JSON.stringify(parsedExpected);
+  return actual == parsedExpected;
 }
 
 function renderProfile() {
-  const progress = JSON.parse(localStorage.getItem(PROGRESS_KEY)) || {};
+  const progress = userProgress || {};
   const allTasks = getAllTasks();
   const solvedTasks = Object.values(progress).filter(p => p.isPassed);
   const solvedCount = solvedTasks.length;
@@ -497,8 +577,11 @@ function renderProfile() {
   const avgTime = timesArray.length > 0 ? Math.round(totalTime / timesArray.length) : 0;
 
   const unlockedList = getUnlockedAchievements();
-  
   const savedGeminiKey = localStorage.getItem(GEMINI_KEY) || '';
+
+  const stats = getUserStats();
+  const xpNeeded = stats.level * 1000;
+  const xpPercent = Math.min(100, Math.round((stats.xp / xpNeeded) * 100));
 
   let achievementsHTML = '';
   ACHIEVEMENTS.forEach(ach => {
@@ -515,16 +598,32 @@ function renderProfile() {
   });
 
   workspaceContainer.innerHTML = `
-    <div class="profile-layout" style="width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 30px; align-items: start;">
+    <div class="profile-layout" style="width: 100%; display: grid; grid-template-columns: 1fr; gap: 30px; align-items: start; max-width: 800px; margin: 0 auto;">
       <div class="profile-container" style="display: flex; flex-direction: column; gap: 25px;">
-        <div>
-          <h2>Кабинет стажёра</h2>
-          <p style="color: var(--text-muted);">Твой личный трекер готовности к работе</p>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <h2>Кабинет стажёра</h2>
+            <p style="color: var(--text-muted);">Твой личный трекер готовности к работе</p>
+          </div>
+          <div style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); padding: 10px 18px; border-radius: 12px; text-align: center; color: white; box-shadow: 0 4px 15px rgba(245,158,11,0.2);">
+            <div style="font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.9;">Ударный режим</div>
+            <div style="font-size: 20px; font-weight: bold; font-family: monospace;">🔥 ${stats.streak} дн.</div>
+          </div>
+        </div>
+
+        <div style="background: var(--bg-card); border: 1px solid var(--border-color); padding: 25px; border-radius: 12px; display: flex; flex-direction: column; gap: 15px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h3 style="font-size: 18px; color: var(--warning);">⚡ Уровень ${stats.level}</h3>
+            <span style="font-size: 13px; color: var(--text-muted); font-family: monospace;">${stats.xp} / ${xpNeeded} XP</span>
+          </div>
+          <div style="width: 100%; height: 12px; background: var(--bg-main); border-radius: 6px; overflow: hidden; border: 1px solid var(--border-color);">
+            <div style="width: ${xpPercent}%; height: 100%; background: linear-gradient(90deg, #3b82f6 0%, #60a5fa 100%); transition: width 0.3s ease;"></div>
+          </div>
         </div>
 
         <div style="background: var(--bg-card); border: 1px solid var(--border-color); padding: 20px; border-radius: 12px; display: flex; flex-direction: column; gap: 10px;">
           <h3 style="font-size: 14px; color: var(--accent);">🔑 Настройка ИИ-Ментора (Gemini API)</h3>
-          <p style="font-size: 11px; color: var(--text-muted); line-height: 1.4;">Ключ сохраняется локально в вашем браузере. Получить бесплатный ключ можно в Google AI Studio.</p>
+          <p style="font-size: 11px; color: var(--text-muted); line-height: 1.4;">Ключ сохраняется локально в браузере.</p>
           <div style="display: flex; gap: 8px;">
             <input type="password" id="gemini-key-input" value="${savedGeminiKey}" placeholder="AIzaSy..." style="flex: 1; padding: 8px 12px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); font-family: monospace; font-size: 13px;">
             <button id="btn-save-gemini-key" style="background: var(--success); color: white; border: none; padding: 8px 16px; border-radius: 6px; font-weight: bold; cursor: pointer;">Сохранить</button>
@@ -567,112 +666,174 @@ function renderProfile() {
           </div>
         </div>
       </div>
-
-      <div class="constructor-container" style="background: var(--bg-card); border: 1px solid var(--border-color); padding: 25px; border-radius: 12px; display: flex; flex-direction: column; gap: 15px;">
-        <h3 style="margin-bottom: 5px;">🛠 FKонструктор задач</h3>
-        <form id="create-task-form" style="display: flex; flex-direction: column; gap: 12px;">
-          <input type="text" id="new-task-title" placeholder="Название задачи" required style="width: 100%; padding: 8px 12px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main);">
-          <textarea id="new-task-desc" placeholder="Описание задачи..." required rows="3" style="width: 100%; padding: 8px 12px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); font-family: inherit; resize: vertical;"></textarea>
-          
-          <div style="display: flex; gap: 10px;">
-            <select id="new-task-diff" style="flex: 1; padding: 8px 12px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main);">
-              <option value="easy">Сложность: Легко</option>
-              <option value="medium">Сложность: Средне</option>
-            </select>
-            <input type="text" id="new-task-id" placeholder="Уникальный ID (латиница)" required style="flex: 1; padding: 8px 12px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main);">
-          </div>
-
-          <textarea id="new-task-starter" placeholder="Starter code..." required rows="4" style="width: 100%; padding: 8px 12px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); font-family: monospace; font-size: 13px;">function name() {\n\n}</textarea>
-          
-          <div style="border-top: 1px solid var(--border-color); padding-top: 10px;">
-            <h4 style="margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">Тест-кейсы: <button type="button" id="add-test-btn" style="background: var(--accent); border: none; color: white; padding: 4px 8px; font-size: 11px; border-radius: 4px;">+ Добавить</button></h4>
-            <div id="constructor-tests-list" style="display: flex; flex-direction: column; gap: 8px; max-height: 150px; overflow-y: auto;">
-              <div class="test-fields-group" style="display: flex; gap: 8px;">
-                <input type="text" placeholder="Вход ех: [2, 3]" required class="test-input" style="flex: 1; padding: 6px 10px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 4px; color: var(--text-main); font-size: 12px;">
-                <input type="text" placeholder="Ожидание ех: 5" required class="test-expected" style="flex: 1; padding: 6px 10px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 4px; color: var(--text-main); font-size: 12px;">
-              </div>
-            </div>
-          </div>
-          <button type="submit" style="background: var(--success); color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer;">🚀 Создать задачу</button>
-        </form>
-      </div>
     </div>
   `;
+
+  const user = JSON.parse(localStorage.getItem('junior_code_user'));
+  if (user) {
+    const heading = workspaceContainer.querySelector('h2');
+    if (heading) heading.textContent = `Кабинет стажёра: ${user.username}`;
+  }
+
+  appendLogoutButton();
 
   document.getElementById('btn-save-gemini-key').addEventListener('click', () => {
     const keyVal = document.getElementById('gemini-key-input').value;
     localStorage.setItem(GEMINI_KEY, keyVal);
     alert('API-ключ Gemini успешно сохранен!');
   });
+}
 
-  const testsListContainer = document.getElementById('constructor-tests-list');
-  document.getElementById('add-test-btn').addEventListener('click', () => {
-    const testGroup = document.createElement('div');
-    testGroup.classList.add('test-fields-group');
-    testGroup.style.display = 'flex';
-    testGroup.style.gap = '8px';
-    testGroup.innerHTML = `
-      <input type="text" placeholder="Вход ех: [5, 5]" required class="test-input" style="flex: 1; padding: 6px 10px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 4px; color: var(--text-main); font-size: 12px;">
-      <input type="text" placeholder="Ожидание ех: 10" required class="test-expected" style="flex: 1; padding: 6px 10px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 4px; color: var(--text-main); font-size: 12px;">
-    `;
-    testsListContainer.appendChild(testGroup);
-    testsListContainer.scrollTop = testsListContainer.scrollHeight;
-  });
+function renderAdminPanel() {
+  if (!workspaceContainer) return;
+  
+  workspaceContainer.innerHTML = `
+    <div id="admin-tab-content" style="display: flex; flex-direction: column; gap: 20px; max-width: 800px; margin: 0 auto; width: 100%;">
+      <h2>Панель администратора</h2>
+      <p style="color: var(--text-muted); margin-top: -10px;">Здесь вы можете добавлять новые задачи напрямую в базу данных MongoDB</p>
 
-  document.getElementById('create-task-form').addEventListener('submit', (e) => {
+      <form id="add-task-form" style="background: var(--bg-card); border: 1px solid var(--border-color); padding: 25px; border-radius: 12px; display: flex; flex-direction: column; gap: 15px;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+          <div style="display: flex; flex-direction: column; gap: 5px;">
+            <label style="font-size: 12px; color: var(--text-muted);">ID Задачи (на англ., через дефис)</label>
+            <input type="text" id="task-id-input" placeholder="например, find-max-number" required style="padding: 10px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main);">
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 5px;">
+            <label style="font-size: 12px; color: var(--text-muted);">Название задачи</label>
+            <input type="text" id="task-title-input" placeholder="Поиск максимального числа" required style="padding: 10px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main);">
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+          <div style="display: flex; flex-direction: column; gap: 5px;">
+            <label style="font-size: 12px; color: var(--text-muted);">Сложность</label>
+            <select id="task-difficulty-input" style="padding: 10px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main);">
+              <option value="easy">Easy</option>
+              <option value="medium">Medium</option>
+              <option value="hard">Hard</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 5px;">
+          <label style="font-size: 12px; color: var(--text-muted);">Описание задачи (условие, примеры)</label>
+          <textarea id="task-desc-input" rows="4" placeholder="Напишите функцию, которая принимает..." required style="padding: 10px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); font-family: inherit; resize: vertical;"></textarea>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 5px;">
+          <label style="font-size: 12px; color: var(--text-muted);">Начальный шаблон кода для студента</label>
+          <textarea id="task-code-input" rows="5" required style="padding: 10px; background: #1e1e1e; border: 1px solid var(--border-color); border-radius: 6px; color: #f4f4f5; font-family: monospace; resize: vertical;">function myFunction() {\n  // Пиши код здесь\n}</textarea>
+        </div>
+
+        <div style="border-top: 1px solid var(--border-color); padding-top: 15px;">
+          <h3 style="font-size: 16px; margin-bottom: 10px;">Тест-кейсы (Минимум два)</h3>
+          <div id="test-cases-container" style="display: flex; flex-direction: column; gap: 10px;">
+            <div class="test-case-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+              <input type="text" class="test-input" placeholder="Вход (например: [1, 5, 3])" required style="padding: 8px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main);">
+              <input type="text" class="test-output" placeholder="Выход (например: 5)" required style="padding: 8px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main);">
+            </div>
+            <div class="test-case-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+              <input type="text" class="test-input" placeholder="Вход (например: [-10, 0, -2])" required style="padding: 8px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main);">
+              <input type="text" class="test-output" placeholder="Выход (например: 0)" required style="padding: 8px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main);">
+            </div>
+          </div>
+        </div>
+
+        <button type="submit" style="background: #10b981; color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; margin-top: 10px;">🚀 Опубликовать задачу</button>
+      </form>
+    </div>
+  `;
+
+  initAdminFormHandler();
+}
+
+function initAdminFormHandler() {
+  const addTaskForm = document.getElementById('add-task-form');
+  if (!addTaskForm) return;
+
+  addTaskForm.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const title = document.getElementById('new-task-title').value;
-    const description = document.getElementById('new-task-desc').value;
-    const difficulty = document.getElementById('new-task-diff').value;
-    const id = document.getElementById('new-task-id').value;
-    const starterCode = document.getElementById('new-task-starter').value;
 
-    const testGroups = document.querySelectorAll('.test-fields-group');
-    const tests = [];
+    const taskId = document.getElementById('task-id-input').value.trim();
+    const title = document.getElementById('task-title-input').value.trim();
+    const difficulty = document.getElementById('task-difficulty-input').value;
+    const description = document.getElementById('task-desc-input').value.trim();
+    const starterCode = document.getElementById('task-code-input').value;
+
+    const testRows = document.querySelectorAll('.test-case-row');
+    const testCases = [];
+
+    testRows.forEach(row => {
+      const inputVal = row.querySelector('.test-input').value.trim();
+      const outputVal = row.querySelector('.test-output').value.trim();
+      if (inputVal && outputVal) {
+        testCases.push({ input: inputVal, output: outputVal });
+      }
+    });
 
     try {
-      testGroups.forEach(group => {
-        tests.push({
-          input: JSON.parse(group.querySelector('.test-input').value),
-          expected: JSON.parse(group.querySelector('.test-expected').value)
-        });
+      const response = await fetch(`${BACKEND_URL}/tasks/new`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeader()
+        },
+        body: JSON.stringify({ taskId, title, description, difficulty, starterCode, testCases })
       });
 
-      const newTask = { id, title, difficulty, description, starterCode, tests };
-      saveCustomTask(newTask);
-      renderTaskList();
-      renderProfile();
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Ошибка при создании задачи');
+
+      alert('🎉 Задача успешно добавлена в MongoDB и доступна всем студентам!');
+      addTaskForm.reset();
+      location.reload();
     } catch (err) {
-      alert('Ошибка при разборе тестов! Убедитесь, что вводите валидный JSON.');
+      alert(`❌ Не удалось создать задачу: ${err.message}`);
     }
   });
 }
 
 function switchTab(tabName) {
   currentTab = tabName;
-  document.querySelectorAll('.tab-btn').forEach(btn => {
-    btn.classList.remove('active');
-    if (btn.dataset.tab === tabName) btn.classList.add('active');
-  });
+  const sidebar = document.getElementById('app-sidebar');
 
-  if (tabName === 'profile') {
-    stopTimer();
-    if (jar) { try { jar.destroy(); jar = null; } catch(e) {} }
-    document.querySelectorAll('.task-item').forEach(b => b.classList.remove('active'));
-    renderProfile();
-  } else if (tabName === 'editor') {
+  document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+  if (sidebar) sidebar.style.display = 'flex';
+
+  if (tabName === 'editor') {
+    const btn = document.getElementById('nav-editor-btn');
+    if (btn) btn.classList.add('active');
+    
     if (activeTask) {
-      selectTask(activeTask.id);
+      renderTaskWorkspaceStructure();
+      initCodeJarEditor();
     } else {
-      workspaceContainer.innerHTML = '<div class="placeholder-content"><h3>Выберите задачу в меню слева</h3></div>';
+      workspaceContainer.innerHTML = `
+        <div class="placeholder-content">
+          <h3>Выберите задачу в меню слева, чтобы начать кодить</h3>
+          <p>Или перейдите в Личный кабинет для просмотра статистики стажировки.</p>
+        </div>`;
     }
+  } else if (tabName === 'profile') {
+    const btn = document.getElementById('nav-profile-btn');
+    if (btn) btn.classList.add('active');
+    renderProfile();
+  } else if (tabName === 'admin') {
+    if (sidebar) sidebar.style.display = 'none';
+    const btn = document.getElementById('nav-admin-btn');
+    if (btn) btn.classList.add('active');
+    
+    renderAdminPanel();
   }
 }
 
-document.getElementById('search-input').addEventListener('input', (e) => {
-  searchQuery = e.target.value;
-  renderTaskList();
-});
+const searchInput = document.getElementById('search-input');
+if (searchInput) {
+  searchInput.addEventListener('input', (e) => {
+    searchQuery = e.target.value;
+    renderTaskList();
+  });
+}
 
 document.querySelectorAll('.btn-filter').forEach(btn => {
   btn.addEventListener('click', (e) => {
@@ -683,18 +844,14 @@ document.querySelectorAll('.btn-filter').forEach(btn => {
   });
 });
 
-document.querySelectorAll('.tab-btn').forEach(btn => {
-  btn.addEventListener('click', (e) => {
-    switchTab(e.target.dataset.tab);
-  });
-});
+const edBtn = document.getElementById('nav-editor-btn');
+if (edBtn) edBtn.addEventListener('click', () => switchTab('editor'));
 
-renderTaskList();
+const prBtn = document.getElementById('nav-profile-btn');
+if (prBtn) prBtn.addEventListener('click', () => switchTab('profile'));
 
-
-
-const BACKEND_URL = 'http://localhost:5000/api';
-let isSignUpMode = false;
+const adBtn = document.getElementById('nav-admin-btn');
+if (adBtn) adBtn.addEventListener('click', () => switchTab('admin'));
 
 const authScreen = document.getElementById('auth-screen');
 const authForm = document.getElementById('auth-form');
@@ -705,87 +862,88 @@ const authToggleBtn = document.getElementById('auth-toggle-btn');
 const authToggleText = document.getElementById('auth-toggle-text');
 const authError = document.getElementById('auth-error');
 
-authToggleBtn.addEventListener('click', () => {
-  isSignUpMode = !isSignUpMode;
-  authError.style.display = 'none';
-  authForm.reset();
-
-  if (isSignUpMode) {
-    authTitle.textContent = 'Регистрация';
-    authSubtitle.textContent = 'Создайте аккаунт, чтобы сохранять прогресс в базе данных';
-    authSubmitBtn.textContent = 'Зарегистрироваться';
-    authToggleText.textContent = 'Уже есть аккаунт?';
-    authToggleBtn.textContent = 'Войти';
-  } else {
-    authTitle.textContent = 'Вход в Junior Code';
-    authSubtitle.textContent = 'Введите свои данные для доступа к платформе';
-    authSubmitBtn.textContent = 'Войти';
-    authToggleText.textContent = 'Еще нет аккаунта?';
-    authToggleBtn.textContent = 'Зарегистрироваться';
-  }
-});
-
-authForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  authError.style.display = 'none';
-
-  const username = document.getElementById('auth-username').value;
-  const password = document.getElementById('auth-password').value;
-  
-  const endpoint = isSignUpMode ? '/auth/register' : '/auth/login';
-
-  try {
-    const response = await fetch(`${BACKEND_URL}${endpoint}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password })
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(data.message || 'Что-то пошло не так');
-    }
+if (authToggleBtn) {
+  authToggleBtn.addEventListener('click', () => {
+    isSignUpMode = !isSignUpMode;
+    authError.style.display = 'none';
+    authForm.reset();
 
     if (isSignUpMode) {
-      alert('Регистрация успешна! Теперь вы можете войти.');
-      authToggleBtn.click();
-    } 
-    else {
-      localStorage.setItem('junior_code_token', data.token);
-      localStorage.setItem('junior_code_user', JSON.stringify(data.user));
-  
-      checkAuth();
+      authTitle.textContent = 'Регистрация';
+      authSubtitle.textContent = 'Создайте аккаунт, чтобы сохранять прогресс в базе данных';
+      authSubmitBtn.textContent = 'Зарегистрироваться';
+      authToggleText.textContent = 'Уже есть аккаунт?';
+      authToggleBtn.textContent = 'Войти';
+    } else {
+      authTitle.textContent = 'Вход в Junior Code';
+      authSubtitle.textContent = 'Введите свои данные для доступа к платформе';
+      authSubmitBtn.textContent = 'Войти';
+      authToggleText.textContent = 'Еще нет аккаунта?';
+      authToggleBtn.textContent = 'Зарегистрироваться';
     }
+  });
+}
 
-  } 
-  catch (err) {
-    authError.textContent = `❌ ${err.message}`;
-    authError.style.display = 'block';
+if (authForm) {
+  authForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    authError.style.display = 'none';
+
+    const username = document.getElementById('auth-username').value;
+    const password = document.getElementById('auth-password').value;
+    
+    const endpoint = isSignUpMode ? '/auth/register' : '/auth/login';
+
+    try {
+      const response = await fetch(`${BACKEND_URL}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Что-то пошло не так');
+
+      if (isSignUpMode) {
+        alert('Регистрация успешна! Теперь вы можете войти.');
+        authToggleBtn.click();
+      } else {
+        localStorage.setItem('junior_code_token', data.token);
+        localStorage.setItem('junior_code_user', JSON.stringify(data.user));
+        checkAuth();
+      }
+    } catch (err) {
+      authError.textContent = `❌ ${err.message}`;
+      authError.style.display = 'block';
+    }
+  });
+}
+
+function checkAdminRights() {
+  const userData = localStorage.getItem('junior_code_user');
+  if (userData) {
+    const user = JSON.parse(userData);
+    const navAdminBtn = document.getElementById('nav-admin-btn'); 
+    if (user.role === 'admin' && navAdminBtn) {
+      navAdminBtn.style.display = 'block';
+    }
   }
-});
+}
 
 function checkAuth() {
   const token = localStorage.getItem('junior_code_token');
-  
   if (token) {
-    authScreen.style.display = 'none';
-    
-    const user = JSON.parse(localStorage.getItem('junior_code_user'));
-    const profileHeader = document.querySelector('.profile-container h2');
-    if (profileHeader) {
-      profileHeader.textContent = `Кабинет стажёра: ${user.username}`;
-    }
-
+    if (authScreen) authScreen.style.display = 'none';
+    checkAdminRights();
     loadProgressFromServer();
   } else {
-    authScreen.style.display = 'flex';
+    if (authScreen) authScreen.style.display = 'flex';
   }
 }
 
 function appendLogoutButton() {
-  const profileLayout = document.querySelector('.profile-layout');
-  if (profileLayout && !document.getElementById('btn-logout')) {
+  const profileContainer = document.querySelector('.profile-container');
+  if (profileContainer && !document.getElementById('btn-logout')) {
     const logoutBtn = document.createElement('button');
     logoutBtn.id = 'btn-logout';
     logoutBtn.textContent = '🚪 Выйти из аккаунта';
@@ -796,16 +954,9 @@ function appendLogoutButton() {
       localStorage.removeItem('junior_code_user');
       location.reload();
     });
-
-    const profileContainer = document.querySelector('.profile-container');
-    if (profileContainer) profileContainer.appendChild(logoutBtn);
+    profileContainer.appendChild(logoutBtn);
   }
 }
 
 checkAuth();
-
-const originalRenderProfile = renderProfile;
-renderProfile = function() {
-  originalRenderProfile();
-  appendLogoutButton();
-};
+renderTaskList();
