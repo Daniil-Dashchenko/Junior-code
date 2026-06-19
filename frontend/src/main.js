@@ -5,6 +5,9 @@ import Prism from 'prismjs';
 let jar = null;
 let activeTask = null;
 
+let userProgress = {};
+let userSubmissions =  [];
+
 let currentDifficultyFilter = 'all';
 let searchQuery = '';
 let currentTab = 'editor';
@@ -35,46 +38,58 @@ function getAllTasks() {
   return [...defaultTasks, ...customTasks];
 }
 
-function saveProgress(taskId, code, isPassed, timeSpent = null) {
-  const progress = JSON.parse(localStorage.getItem(PROGRESS_KEY)) || {};
-  const oldStatus = progress[taskId]?.isPassed || false;
-  const oldTime = progress[taskId]?.timeSpent || null;
+function getAuthHeader() {
+  const token = localStorage.getItem('junior_code_token');
+  return token ? { 'Authorization': `Bearer ${token}` } : {};
+}
 
-  let finalTime = oldTime;
-  if (isPassed) {
-    if (oldTime === null || (timeSpent !== null && timeSpent < oldTime)) {
-      finalTime = timeSpent;
-    }
-  } else if (oldTime === null && timeSpent !== null) {
-    finalTime = timeSpent;
+async function loadProgressFromServer() {
+  try {
+    const response = await fetch(`${BACKEND_URL}/tasks/progress`, {
+      method: 'GET',
+      headers: {
+        ...getAuthHeader()
+      }
+    });
+
+    if (!response.ok) throw new Error('Не удалось загрузить прогресс');
+
+    const data = await response.json();
+    userProgress = data.progress || {};
+    userSubmissions = data.submissions || [];
+    
+    renderTaskList();
+  } catch (err) {
+    console.error('Ошибка загрузки прогресса:', err);
   }
+}
 
-  progress[taskId] = { code, isPassed: isPassed || oldStatus, timeSpent: finalTime };
-  localStorage.setItem(PROGRESS_KEY, JSON.stringify(progress));
+async function saveSubmissionToServer(taskId, code, isPassed, timeSpent) {
+  try {
+    const response = await fetch(`${BACKEND_URL}/tasks/submit`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeader()
+      },
+      body: JSON.stringify({ taskId, code, isPassed, timeSpent })
+    });
+
+    if (!response.ok) throw new Error('Ошибка сохранения на сервере');
+
+    await loadProgressFromServer();
+  } 
+  catch (err) {
+    console.error('Ошибка отправки на сервер:', err);
+  }
 }
 
 function getTaskProgress(taskId) {
-  const progress = JSON.parse(localStorage.getItem(PROGRESS_KEY)) || {};
-  return progress[taskId] || null;
+  return userProgress[taskId] || null;
 }
 
 function getSubmissions(taskId) {
-  const allSubmissions = JSON.parse(localStorage.getItem(SUBMISSIONS_KEY)) || {};
-  return allSubmissions[taskId] || [];
-}
-
-function saveSubmission(taskId, code, isPassed) {
-  const allSubmissions = JSON.parse(localStorage.getItem(SUBMISSIONS_KEY)) || {};
-  if (!allSubmissions[taskId]) allSubmissions[taskId] = [];
-
-  const newSubmission = {
-    timestamp: new Date().toLocaleString('ru-RU'),
-    code: code,
-    isPassed: isPassed
-  };
-
-  allSubmissions[taskId].unshift(newSubmission);
-  localStorage.setItem(SUBMISSIONS_KEY, JSON.stringify(allSubmissions));
+  return userSubmissions.filter(sub => sub.taskId === taskId);
 }
 
 function getUnlockedAchievements() {
@@ -410,7 +425,7 @@ async function askGeminiMentor(task, userCode) {
   }
 }
 
-function runTests(task, userCode) {
+async function runTests(task, userCode) {
   const resultsContainer = workspaceContainer.querySelector('.test-results');
   const resultsList = workspaceContainer.querySelector('.results-list');
   if (!resultsContainer || !resultsList) return;
@@ -448,9 +463,7 @@ function runTests(task, userCode) {
       checkAchievementsAfterTaskSolved(task.id, secondsElapsed);
     }
 
-    saveSubmission(task.id, userCode, allTestsPassed);
-    saveProgress(task.id, userCode, allTestsPassed, secondsElapsed);
-    renderTaskList();
+    await saveSubmissionToServer(task.id, userCode, allTestsPassed, secondsElapsed);
 
     if (activeTaskTab === 'history') updateTaskLeftContent();
 
@@ -460,8 +473,7 @@ function runTests(task, userCode) {
     li.innerHTML = `<strong>Ошибка:</strong> ${error.message}`;
     resultsList.appendChild(li);
 
-    saveSubmission(task.id, userCode, false);
-    saveProgress(task.id, userCode, false, secondsElapsed);
+    await saveSubmissionToServer(task.id, userCode, allTestsPassed, secondsElapsed);
     
     if (activeTaskTab === 'history') updateTaskLeftContent();
   }
@@ -678,3 +690,122 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 });
 
 renderTaskList();
+
+
+
+const BACKEND_URL = 'http://localhost:5000/api';
+let isSignUpMode = false;
+
+const authScreen = document.getElementById('auth-screen');
+const authForm = document.getElementById('auth-form');
+const authTitle = document.getElementById('auth-title');
+const authSubtitle = document.getElementById('auth-subtitle');
+const authSubmitBtn = document.getElementById('auth-submit-btn');
+const authToggleBtn = document.getElementById('auth-toggle-btn');
+const authToggleText = document.getElementById('auth-toggle-text');
+const authError = document.getElementById('auth-error');
+
+authToggleBtn.addEventListener('click', () => {
+  isSignUpMode = !isSignUpMode;
+  authError.style.display = 'none';
+  authForm.reset();
+
+  if (isSignUpMode) {
+    authTitle.textContent = 'Регистрация';
+    authSubtitle.textContent = 'Создайте аккаунт, чтобы сохранять прогресс в базе данных';
+    authSubmitBtn.textContent = 'Зарегистрироваться';
+    authToggleText.textContent = 'Уже есть аккаунт?';
+    authToggleBtn.textContent = 'Войти';
+  } else {
+    authTitle.textContent = 'Вход в Junior Code';
+    authSubtitle.textContent = 'Введите свои данные для доступа к платформе';
+    authSubmitBtn.textContent = 'Войти';
+    authToggleText.textContent = 'Еще нет аккаунта?';
+    authToggleBtn.textContent = 'Зарегистрироваться';
+  }
+});
+
+authForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  authError.style.display = 'none';
+
+  const username = document.getElementById('auth-username').value;
+  const password = document.getElementById('auth-password').value;
+  
+  const endpoint = isSignUpMode ? '/auth/register' : '/auth/login';
+
+  try {
+    const response = await fetch(`${BACKEND_URL}${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || 'Что-то пошло не так');
+    }
+
+    if (isSignUpMode) {
+      alert('Регистрация успешна! Теперь вы можете войти.');
+      authToggleBtn.click();
+    } 
+    else {
+      localStorage.setItem('junior_code_token', data.token);
+      localStorage.setItem('junior_code_user', JSON.stringify(data.user));
+  
+      checkAuth();
+    }
+
+  } 
+  catch (err) {
+    authError.textContent = `❌ ${err.message}`;
+    authError.style.display = 'block';
+  }
+});
+
+function checkAuth() {
+  const token = localStorage.getItem('junior_code_token');
+  
+  if (token) {
+    authScreen.style.display = 'none';
+    
+    const user = JSON.parse(localStorage.getItem('junior_code_user'));
+    const profileHeader = document.querySelector('.profile-container h2');
+    if (profileHeader) {
+      profileHeader.textContent = `Кабинет стажёра: ${user.username}`;
+    }
+
+    loadProgressFromServer();
+  } else {
+    authScreen.style.display = 'flex';
+  }
+}
+
+function appendLogoutButton() {
+  const profileLayout = document.querySelector('.profile-layout');
+  if (profileLayout && !document.getElementById('btn-logout')) {
+    const logoutBtn = document.createElement('button');
+    logoutBtn.id = 'btn-logout';
+    logoutBtn.textContent = '🚪 Выйти из аккаунта';
+    logoutBtn.style = 'background: #ef4444; color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; margin-top: 15px; width: 100%;';
+    
+    logoutBtn.addEventListener('click', () => {
+      localStorage.removeItem('junior_code_token');
+      localStorage.removeItem('junior_code_user');
+      location.reload();
+    });
+
+    const profileContainer = document.querySelector('.profile-container');
+    if (profileContainer) profileContainer.appendChild(logoutBtn);
+  }
+}
+
+checkAuth();
+
+const originalRenderProfile = renderProfile;
+renderProfile = function() {
+  originalRenderProfile();
+  appendLogoutButton();
+};

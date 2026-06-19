@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JuniorCode — Платформа для стажировки</title>
+  <link rel="stylesheet" href="./src/style.css">
+</head>
+<body>
+  <div id="auth-screen" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-main); z-index: 10000; display: flex; align-items: center; justify-content: center;">
+  <div style="background: var(--bg-card); border: 1px solid var(--border-color); padding: 35px; border-radius: 12px; width: 100%; max-width: 400px; display: flex; flex-direction: column; gap: 20px; box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
+    <div>
+      <h2 id="auth-title" style="font-size: 24px; margin-bottom: 5px;">Вход в Junior Code</h2>
+      <p id="auth-subtitle" style="color: var(--text-muted); font-size: 14px;">Введите свои данные для доступа к платформе</p>
+    </div>
+    
+    <form id="auth-form" style="display: flex; flex-direction: column; gap: 15px;">
+      <div style="display: flex; flex-direction: column; gap: 5px;">
+        <label style="font-size: 12px; color: var(--text-muted); text-transform: uppercase;">Логин</label>
+        <input type="text" id="auth-username" required style="padding: 10px 12px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main);">
+      </div>
+      
+      <div style="display: flex; flex-direction: column; gap: 5px;">
+        <label style="font-size: 12px; color: var(--text-muted); text-transform: uppercase;">Пароль</label>
+        <input type="password" id="auth-password" required style="padding: 10px 12px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main);">
+      </div>
+
+      <div id="auth-error" style="display: none; color: #ef4444; font-size: 13px;"></div>
+
+      <button type="submit" id="auth-submit-btn" style="background: var(--accent); color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; margin-top: 10px;">Войти</button>
+    </form>
+
+    <div style="text-align: center; font-size: 13px; color: var(--text-muted); margin-top: 5px;">
+      <span id="auth-toggle-text">Еще нет аккаунта?</span> 
+      <button id="auth-toggle-btn" style="background: none; border: none; color: var(--accent); cursor: pointer; font-weight: bold; padding: 0; margin-left: 5px;">Зарегистрироваться</button>
+    </div>
+  </div>
+</div>
+  <div class="app-container">
+    
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <h2>🚀 JuniorCode</h2>
+        <span class="badge">JS Edition</span>
+      </div>
+
+      <div class="sidebar-filters" style="padding: 15px; border-bottom: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 10px;">
+        <input type="text" id="search-input" placeholder="Поиск задачи..." style="width: 100%; padding: 8px 12px; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); font-size: 13px;">
+        
+        <div class="filter-buttons" style="display: flex; gap: 5px;">
+          <button class="btn-filter active" data-difficulty="all">Все</button>
+          <button class="btn-filter" data-difficulty="easy">Легко</button>
+          <button class="btn-filter" data-difficulty="medium">Средне</button>
+        </div>
+      </div>
+      
+      <nav class="task-list">
+        </nav>
+    </aside>
+
+    <div class="main-wrapper" style="flex: 1; display: flex; flex-direction: column;">
+      
+      <header class="main-header" style="height: 60px; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; padding: 0 40px; gap: 20px; background: var(--bg-sidebar);">
+        <button class="tab-btn active" data-tab="editor">📝 Редактор кода</button>
+        <button class="tab-btn" data-tab="profile">👤 Личный кабинет</button>
+      </header>
+
+      <main class="workspace">
+        <div class="placeholder-content">
+          <h3>Выберите задачу в меню слева, чтобы начать кодить</h3>
+          <p>Или перейдите в Личный кабинет для просмотра статистики стажировки.</p>
+        </div>
+      </main>
+    </div>
+
+  </div>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
