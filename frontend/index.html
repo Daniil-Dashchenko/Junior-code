@@ -7,6 +7,35 @@
   <link rel="stylesheet" href="./src/style.css">
 </head>
 <body>
+  <div id="auth-screen" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-main); z-index: 10000; display: flex; align-items: center; justify-content: center;">
+  <div style="background: var(--bg-card); border: 1px solid var(--border-color); padding: 35px; border-radius: 12px; width: 100%; max-width: 400px; display: flex; flex-direction: column; gap: 20px; box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
+    <div>
+      <h2 id="auth-title" style="font-size: 24px; margin-bottom: 5px;">Вход в Junior Code</h2>
+      <p id="auth-subtitle" style="color: var(--text-muted); font-size: 14px;">Введите свои данные для доступа к платформе</p>
+    </div>
+    
+    <form id="auth-form" style="display: flex; flex-direction: column; gap: 15px;">
+      <div style="display: flex; flex-direction: column; gap: 5px;">
+        <label style="font-size: 12px; color: var(--text-muted); text-transform: uppercase;">Логин</label>
+        <input type="text" id="auth-username" required style="padding: 10px 12px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main);">
+      </div>
+      
+      <div style="display: flex; flex-direction: column; gap: 5px;">
+        <label style="font-size: 12px; color: var(--text-muted); text-transform: uppercase;">Пароль</label>
+        <input type="password" id="auth-password" required style="padding: 10px 12px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main);">
+      </div>
+
+      <div id="auth-error" style="display: none; color: #ef4444; font-size: 13px;"></div>
+
+      <button type="submit" id="auth-submit-btn" style="background: var(--accent); color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; margin-top: 10px;">Войти</button>
+    </form>
+
+    <div style="text-align: center; font-size: 13px; color: var(--text-muted); margin-top: 5px;">
+      <span id="auth-toggle-text">Еще нет аккаунта?</span> 
+      <button id="auth-toggle-btn" style="background: none; border: none; color: var(--accent); cursor: pointer; font-weight: bold; padding: 0; margin-left: 5px;">Зарегистрироваться</button>
+    </div>
+  </div>
+</div>
   <div class="app-container">
     
     <aside class="sidebar">

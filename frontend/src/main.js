@@ -678,3 +678,121 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 });
 
 renderTaskList();
+
+
+
+const BACKEND_URL = 'http://localhost:5000/api';
+let isSignUpMode = false;
+
+const authScreen = document.getElementById('auth-screen');
+const authForm = document.getElementById('auth-form');
+const authTitle = document.getElementById('auth-title');
+const authSubtitle = document.getElementById('auth-subtitle');
+const authSubmitBtn = document.getElementById('auth-submit-btn');
+const authToggleBtn = document.getElementById('auth-toggle-btn');
+const authToggleText = document.getElementById('auth-toggle-text');
+const authError = document.getElementById('auth-error');
+
+authToggleBtn.addEventListener('click', () => {
+  isSignUpMode = !isSignUpMode;
+  authError.style.display = 'none';
+  authForm.reset();
+
+  if (isSignUpMode) {
+    authTitle.textContent = 'Регистрация';
+    authSubtitle.textContent = 'Создайте аккаунт, чтобы сохранять прогресс в базе данных';
+    authSubmitBtn.textContent = 'Зарегистрироваться';
+    authToggleText.textContent = 'Уже есть аккаунт?';
+    authToggleBtn.textContent = 'Войти';
+  } else {
+    authTitle.textContent = 'Вход в Junior Code';
+    authSubtitle.textContent = 'Введите свои данные для доступа к платформе';
+    authSubmitBtn.textContent = 'Войти';
+    authToggleText.textContent = 'Еще нет аккаунта?';
+    authToggleBtn.textContent = 'Зарегистрироваться';
+  }
+});
+
+authForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  authError.style.display = 'none';
+
+  const username = document.getElementById('auth-username').value;
+  const password = document.getElementById('auth-password').value;
+  
+  const endpoint = isSignUpMode ? '/auth/register' : '/auth/login';
+
+  try {
+    const response = await fetch(`${BACKEND_URL}${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || 'Что-то пошло не так');
+    }
+
+    if (isSignUpMode) {
+      alert('Регистрация успешна! Теперь вы можете войти.');
+      authToggleBtn.click();
+    } 
+    else {
+      localStorage.setItem('junior_code_token', data.token);
+      localStorage.setItem('junior_code_user', JSON.stringify(data.user));
+  
+      checkAuth();
+    }
+
+  } 
+  catch (err) {
+    authError.textContent = `❌ ${err.message}`;
+    authError.style.display = 'block';
+  }
+});
+
+function checkAuth() {
+  const token = localStorage.getItem('junior_code_token');
+  
+  if (token) {
+    authScreen.style.display = 'none';
+    
+    const user = JSON.parse(localStorage.getItem('junior_code_user'));
+    const profileHeader = document.querySelector('.profile-container h2');
+    if (profileHeader) {
+      profileHeader.textContent = `Кабинет стажёра: ${user.username}`;
+    }
+  } 
+  else {
+    authScreen.style.display = 'flex';
+  }
+}
+
+function appendLogoutButton() {
+  const profileLayout = document.querySelector('.profile-layout');
+  if (profileLayout && !document.getElementById('btn-logout')) {
+    const logoutBtn = document.createElement('button');
+    logoutBtn.id = 'btn-logout';
+    logoutBtn.textContent = '🚪 Выйти из аккаунта';
+    logoutBtn.style = 'background: #ef4444; color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; margin-top: 15px; width: 100%;';
+    
+    logoutBtn.addEventListener('click', () => {
+      localStorage.removeItem('junior_code_token');
+      localStorage.removeItem('junior_code_user');
+      location.reload();
+    });
+
+    const profileContainer = document.querySelector('.profile-container');
+    if (profileContainer) profileContainer.appendChild(logoutBtn);
+  }
+}
+
+checkAuth();
+
+const originalRenderProfile = renderProfile;
+renderProfile = function() {
+  originalRenderProfile();
+  appendLogoutButton();
+};
